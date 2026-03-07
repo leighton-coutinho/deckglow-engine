@@ -42,12 +42,12 @@
     <ClCompile Include="ReactiveVisualEngine.cpp">
       <Filter>SrcFiles</Filter>
     </ClCompile>
-    <ClCompile Include="WasapiCapture.cpp">
+    <ClCompile Include="SrcFiles\audio\WasapiCapture.cpp">
       <Filter>SrcFiles\audio</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="WasapiCapture.h">
+    <ClInclude Include="Headers\audio\WasapiCapture.h">
       <Filter>Headers\audio</Filter>
     </ClInclude>
   </ItemGroup>

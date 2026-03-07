@@ -129,10 +129,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ReactiveVisualEngine.cpp" />
-    <ClCompile Include="WasapiCapture.cpp" />
+    <ClCompile Include="SrcFiles\audio\WasapiCapture.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="WasapiCapture.h" />
+    <ClInclude Include="Headers\audio\WasapiCapture.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

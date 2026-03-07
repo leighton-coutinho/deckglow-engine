@@ -1,4 +1,4 @@
-#include "Header Files/audio/WasapiCapture.h"
+#include "Headers/audio/WasapiCapture.h"
 
 #define NOMINMAX
 #include <windows.h>
