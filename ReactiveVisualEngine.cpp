@@ -2,21 +2,75 @@
 //
 
 #include <iostream>
+#include <vector>
+
+#include "Headers/audio/WasapiCapture.h"
+#include "Headers/dsp/AudioBuffer.h"
+#include "Headers/dsp/RMS.h"
+#include "Headers/dsp/BandSplitter.h"
 
 int main()
 {
-    std::cout << "ReactiveEngine starting...\n";
+    WasapiCapture cap;
+
+    if (!cap.initializeDefaultLoopback())
+    {
+        std::cout << "Failed to initialize audio capture\n";
+        return 1;
+    }
+
+    std::vector<float> mono;
+
+    BandSplitter splitter;
+    bool initialized = false;
+
+    cap.setCallback(
+        [&](const float* data, size_t frames, int channels, int sampleRate)
+        {
+            // 1️⃣ Convert stereo → mono
+            AudioBuffer::downmixToMono(data, frames, channels, mono);
+
+            // 2️⃣ Initialize filters once
+            if (!initialized)
+            {
+                splitter.initialize(sampleRate);
+                initialized = true;
+            }
+
+            float bassEnergy = 0;
+            float midEnergy = 0;
+            float highEnergy = 0;
+
+            // 3️⃣ Process every sample
+            for (float s : mono)
+            {
+                splitter.process(s);
+
+                bassEnergy += splitter.bass * splitter.bass;
+                midEnergy += splitter.mid * splitter.mid;
+                highEnergy += splitter.high * splitter.high;
+            }
+
+            // 4️⃣ Compute RMS for each band
+            bassEnergy = std::sqrt(bassEnergy / mono.size());
+            midEnergy = std::sqrt(midEnergy / mono.size());
+            highEnergy = std::sqrt(highEnergy / mono.size());
+
+            // 5️⃣ Print results
+            std::cout
+                << "Bass: " << bassEnergy
+                << "  Mid: " << midEnergy
+                << "  High: " << highEnergy
+                << "\r";
+        }
+    );
+
+    cap.start();
+
+    std::cout << "Listening to system audio...\n";
+    std::cout << "Press ENTER to quit\n";
+
     std::cin.get();
-    return 0;
+
+    cap.stop();
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
