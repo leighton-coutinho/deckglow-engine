@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
+// Implementation struct to hold COM interface pointers and related data for WASAPI capture
 struct WasapiCapture::Impl {
     IMMDeviceEnumerator* enumerator = nullptr;
     IMMDevice* device = nullptr;
@@ -52,16 +53,18 @@ WasapiCapture::~WasapiCapture() {
 }
 
 bool WasapiCapture::initializeDefaultLoopback() {
-    if (m_impl) return true;
+	if (m_impl) return true; // If already initialized, return immediately
     m_impl = new Impl();
 
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    // Initialize COM for multi-threaded use
+	HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
         std::cerr << "CoInitializeEx failed: 0x" << std::hex << hr << std::dec << "\n";
         return false;
     }
 
-    hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+    // Create an instance of the MMDeviceEnumerator COM object
+	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator),
         reinterpret_cast<void**>(&m_impl->enumerator));
     if (FAILED(hr)) {
@@ -69,20 +72,22 @@ bool WasapiCapture::initializeDefaultLoopback() {
         return false;
     }
 
-    // Default render (speaker) device
+    // Use default render (speaker) device TODO Leighton: Verify if default is ok
     hr = m_impl->enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &m_impl->device);
     if (FAILED(hr)) {
         std::cerr << "GetDefaultAudioEndpoint failed: 0x" << std::hex << hr << std::dec << "\n";
         return false;
     }
 
+	// Activate the IAudioClient interface on the device
     hr = m_impl->device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
         reinterpret_cast<void**>(&m_impl->audioClient));
     if (FAILED(hr)) {
         std::cerr << "Activate(IAudioClient) failed: 0x" << std::hex << hr << std::dec << "\n";
         return false;
     }
-
+    
+	// Get the mix format of the device
     hr = m_impl->audioClient->GetMixFormat(&m_impl->mixFormat);
     if (FAILED(hr) || !m_impl->mixFormat) {
         std::cerr << "GetMixFormat failed: 0x" << std::hex << hr << std::dec << "\n";
@@ -96,6 +101,7 @@ bool WasapiCapture::initializeDefaultLoopback() {
     // Event-driven loopback capture
     DWORD flags = AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
+	// Initialize the audio client for loopback capture with the mix format and buffer duration
     hr = m_impl->audioClient->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
         flags,
@@ -104,6 +110,7 @@ bool WasapiCapture::initializeDefaultLoopback() {
         m_impl->mixFormat,
         nullptr
     );
+
     if (FAILED(hr)) {
         std::cerr << "IAudioClient::Initialize failed: 0x" << std::hex << hr << std::dec
             << " (sampleRate=" << m_sampleRate << ", channels=" << m_channels << ")\n";
@@ -182,10 +189,12 @@ void WasapiCapture::captureThread() {
         m_impl->mixFormat->wBitsPerSample == 16);
 
     while (m_running) {
+		// Wait for the capture event to be signaled, with a timeout to allow checking m_running
         DWORD waitRes = WaitForSingleObject(m_impl->eventHandle, 200);
         if (!m_running) break;
         if (waitRes != WAIT_OBJECT_0) continue;
 
+		// Check how many frames are available in the capture buffer
         UINT32 packetFrames = 0;
         HRESULT hr = m_impl->captureClient->GetNextPacketSize(&packetFrames);
         if (FAILED(hr)) continue;
@@ -195,6 +204,7 @@ void WasapiCapture::captureThread() {
             UINT32 frames = 0;
             DWORD flags = 0;
 
+			// Get the captured audio data from the capture buffer
             hr = m_impl->captureClient->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
             if (FAILED(hr)) break;
 
@@ -221,13 +231,16 @@ void WasapiCapture::captureThread() {
                 std::fill(floatInterleaved.begin(), floatInterleaved.end(), 0.0f);
             }
 
+			// Call the user callback with the captured audio data
             if (m_callback) {
                 m_callback(floatInterleaved.data(), frames, ch, sr);
             }
 
+			// Release the buffer back to the audio engine
             hr = m_impl->captureClient->ReleaseBuffer(frames);
             if (FAILED(hr)) break;
 
+			// Check if more data is available in the capture buffer  TODO Leighton: Verify if this loop is necessary or if we can rely on the event to trigger for new data
             hr = m_impl->captureClient->GetNextPacketSize(&packetFrames);
             if (FAILED(hr)) break;
         }

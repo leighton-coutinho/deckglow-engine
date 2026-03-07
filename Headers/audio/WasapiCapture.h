@@ -24,7 +24,7 @@ public:
 private:
     void captureThread();
 
-    std::thread m_thread;
+    std::thread m_thread; 
     std::atomic<bool> m_running{ false };
     Callback m_callback;
 
@@ -33,6 +33,6 @@ private:
     int m_channels = 0;
 
     // opaque impl pointers (COM interfaces)
-    struct Impl;
+    struct Impl; // Forward declaration of Implementation struct for PIMPL pattern
     Impl* m_impl = nullptr;
 };
