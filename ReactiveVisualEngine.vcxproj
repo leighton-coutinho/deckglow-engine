@@ -132,6 +132,7 @@
     <ClCompile Include="SrcFiles\audio\WasapiCapture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Headers\dsp\EnvelopeFollower.h" />
     <ClInclude Include="Headers\dsp\AudioBuffer.h" />
     <ClInclude Include="Headers\dsp\BandSplitter.h" />
     <ClInclude Include="Headers\dsp\BiquadFilter.h" />

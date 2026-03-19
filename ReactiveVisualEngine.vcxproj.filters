@@ -50,5 +50,20 @@
     <ClInclude Include="Headers\audio\WasapiCapture.h">
       <Filter>Headers\audio</Filter>
     </ClInclude>
+    <ClInclude Include="Headers\dsp\AudioBuffer.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\BandSplitter.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\BiquadFilter.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\RMS.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\EnvelopeFollower.h">
+      <Filter>Headers\dsp</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
