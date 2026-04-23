@@ -10,4 +10,5 @@ struct AnalysisContext
     std::size_t blockFrames = 0;
     std::uint64_t blockIndex = 0;
     double streamTimeSeconds = 0.0;
+    double blockDurationSeconds = 0.0;
 };

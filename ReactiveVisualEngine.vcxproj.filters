@@ -71,6 +71,15 @@
     <ClInclude Include="Headers\analysis\modules\BandEnergyAnalyzer.h">
       <Filter>Headers\analysis\modules</Filter>
     </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\BeatClock.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\OnsetDetector.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\TempoEstimator.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
     <ClInclude Include="Headers\app\RuntimeOptions.h">
       <Filter>Headers\app</Filter>
     </ClInclude>

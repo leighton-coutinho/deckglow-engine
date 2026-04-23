@@ -44,6 +44,10 @@ int main()
                 << "  Bass: " << frame.bass
                 << "  Mid: " << frame.mid
                 << "  High: " << frame.high
+                << "  Onset: " << frame.onset
+                << "  BPM: " << frame.bpm
+                << "  Conf: " << frame.bpmConfidence
+                << "  Beat: " << frame.beatPhase
                 << "  SR: " << sampleRate
                 << "\r";
         }
