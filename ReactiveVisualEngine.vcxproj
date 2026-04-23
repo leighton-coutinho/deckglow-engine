@@ -77,6 +77,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -92,6 +93,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -121,6 +123,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -133,6 +136,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Headers\dsp\AdaptiveNormalizer.h" />
+    <ClInclude Include="Headers\analysis\AnalysisContext.h" />
+    <ClInclude Include="Headers\analysis\AnalysisPipeline.h" />
+    <ClInclude Include="Headers\analysis\FeatureFrame.h" />
+    <ClInclude Include="Headers\analysis\modules\BandEnergyAnalyzer.h" />
+    <ClInclude Include="Headers\app\RuntimeOptions.h" />
     <ClInclude Include="Headers\dsp\EnvelopeFollower.h" />
     <ClInclude Include="Headers\dsp\AudioBuffer.h" />
     <ClInclude Include="Headers\dsp\BandSplitter.h" />

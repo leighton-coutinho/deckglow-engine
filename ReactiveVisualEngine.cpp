@@ -1,20 +1,18 @@
 // ReactiveVisualEngine.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+#include <iomanip>
 #include <iostream>
-#include <vector>
 
+#include "Headers/analysis/AnalysisPipeline.h"
+#include "Headers/analysis/FeatureFrame.h"
+#include "Headers/app/RuntimeOptions.h"
 #include "Headers/audio/WasapiCapture.h"
-#include "Headers/dsp/AudioBuffer.h"
-#include "Headers/dsp/RMS.h"
-#include "Headers/dsp/BandSplitter.h"
-#include "Headers/dsp/EnvelopeFollower.h"
-#include "Headers/dsp/NoiseGate.h"
-#include "Headers/dsp/AdaptiveNormalizer.h"
 #include "Headers/net/UdpSender.h"
 
 int main()
 {
+    RuntimeOptions options;
     WasapiCapture cap;
 
     if (!cap.initializeDefaultLoopback())
@@ -23,91 +21,39 @@ int main()
         return 1;
     }
 
-    std::vector<float> mono;
-
-    BandSplitter splitter;
-
-    EnvelopeFollower bassEnv;
-    EnvelopeFollower midEnv;
-    EnvelopeFollower highEnv;
-
-    NoiseGate bassGate;
-    NoiseGate midGate;
-    NoiseGate highGate;
-
-    AdaptiveNormalizer bassNorm;
-    AdaptiveNormalizer midNorm;
-    AdaptiveNormalizer highNorm;
-
-    bool initialized = false;
-
     UdpSender udp;
+    if (!udp.initialize(options.transport.host, options.transport.port))
+    {
+        std::cout << "Failed to initialize UDP sender for "
+            << options.transport.host << ":" << options.transport.port << "\n";
+        return 1;
+    }
+
+    AnalysisPipeline analysisPipeline;
+
+    std::cout << std::fixed << std::setprecision(3);
 
     cap.setCallback(
         [&](const float* data, size_t frames, int channels, int sampleRate)
         {
-            // 1️⃣ Downmix stereo → mono
-            AudioBuffer::downmixToMono(data, frames, channels, mono);
+            const FeatureFrame frame = analysisPipeline.processAudioBlock(data, frames, channels, sampleRate);
 
-            // 2️⃣ Initialize DSP once (we need sample rate)
-            if (!initialized)
-            {
-                udp.initialize("127.0.0.1", 9000);
-                float sr = static_cast<float>(sampleRate);
-                splitter.initialize(sr);
+            udp.send(frame.bass, frame.mid, frame.high);
 
-                bassEnv.initialize(sr, 10.0f, 200.0f);
-                midEnv.initialize(sr, 20.0f, 150.0f);
-                highEnv.initialize(sr, 5.0f, 80.0f);
-
-                bassGate.initialize(sr, 0.005f);
-                midGate.initialize(sr, 0.003f);
-                highGate.initialize(sr, 0.002f);
-
-                bassNorm.initialize(sr);
-                midNorm.initialize(sr);
-                highNorm.initialize(sr);
-
-                initialized = true;
-            }
-
-            float bassValue = 0.0f;
-            float midValue = 0.0f;
-            float highValue = 0.0f;
-
-            // 3️⃣ Process audio block
-            for (float s : mono)
-            {
-                splitter.process(s);
-
-                float b = bassEnv.process(splitter.bass);
-                float m = midEnv.process(splitter.mid);
-                float h = highEnv.process(splitter.high);
-
-                // Gate first
-                b = bassGate.process(b);
-                m = midGate.process(m);
-                h = highGate.process(h);
-
-                // THEN normalize
-                bassValue = bassNorm.process(b);
-                midValue = midNorm.process(m);
-                highValue = highNorm.process(h);
-            }
-
-            udp.send(bassValue, midValue, highValue);
-            // 4️⃣ Print smoothed output
             std::cout
-                << "Bass: " << bassValue
-                << "  Mid: " << midValue
-                << "  High: " << highValue
+                << "Level: " << frame.masterLevel
+                << "  Bass: " << frame.bass
+                << "  Mid: " << frame.mid
+                << "  High: " << frame.high
+                << "  SR: " << sampleRate
                 << "\r";
         }
     );
 
     cap.start();
 
-    std::cout << "Listening to system audio...\n";
+    std::cout << "Listening to system audio and sending reactive values to "
+        << options.transport.host << ":" << options.transport.port << "\n";
     std::cout << "Press ENTER to quit\n";
 
     std::cin.get();

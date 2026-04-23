@@ -37,6 +37,15 @@
     <Filter Include="Headers\util">
       <UniqueIdentifier>{a43c585c-2092-4111-a28d-95a24b3c61b3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Headers\app">
+      <UniqueIdentifier>{2d1edc2f-7d68-43db-8de9-c7bb733bb3f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Headers\analysis">
+      <UniqueIdentifier>{52bf8cca-90e6-46f0-97aa-4fc988273fe2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Headers\analysis\modules">
+      <UniqueIdentifier>{fb11efd1-14ee-4100-9dab-4ad4bb23dc0f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ReactiveVisualEngine.cpp">
@@ -49,6 +58,21 @@
   <ItemGroup>
     <ClInclude Include="Headers\audio\WasapiCapture.h">
       <Filter>Headers\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\AnalysisContext.h">
+      <Filter>Headers\analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\AnalysisPipeline.h">
+      <Filter>Headers\analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\FeatureFrame.h">
+      <Filter>Headers\analysis</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\BandEnergyAnalyzer.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\app\RuntimeOptions.h">
+      <Filter>Headers\app</Filter>
     </ClInclude>
     <ClInclude Include="Headers\dsp\AudioBuffer.h">
       <Filter>Headers</Filter>
@@ -64,6 +88,15 @@
     </ClInclude>
     <ClInclude Include="Headers\dsp\EnvelopeFollower.h">
       <Filter>Headers\dsp</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\AdaptiveNormalizer.h">
+      <Filter>Headers\dsp</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\dsp\NoiseGate.h">
+      <Filter>Headers\dsp</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\net\UdpSender.h">
+      <Filter>Headers\net</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
