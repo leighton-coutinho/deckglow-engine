@@ -95,6 +95,12 @@
     <ClInclude Include="Headers\dsp\NoiseGate.h">
       <Filter>Headers\dsp</Filter>
     </ClInclude>
+    <ClInclude Include="Headers\net\OscSender.h">
+      <Filter>Headers\net</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\net\TransportRouter.h">
+      <Filter>Headers\net</Filter>
+    </ClInclude>
     <ClInclude Include="Headers\net\UdpSender.h">
       <Filter>Headers\net</Filter>
     </ClInclude>

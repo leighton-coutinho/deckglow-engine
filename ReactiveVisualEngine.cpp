@@ -8,7 +8,7 @@
 #include "Headers/analysis/FeatureFrame.h"
 #include "Headers/app/RuntimeOptions.h"
 #include "Headers/audio/WasapiCapture.h"
-#include "Headers/net/UdpSender.h"
+#include "Headers/net/TransportRouter.h"
 
 int main()
 {
@@ -21,11 +21,10 @@ int main()
         return 1;
     }
 
-    UdpSender udp;
-    if (!udp.initialize(options.transport.host, options.transport.port))
+    TransportRouter transportRouter;
+    if (!transportRouter.initialize(options.transport))
     {
-        std::cout << "Failed to initialize UDP sender for "
-            << options.transport.host << ":" << options.transport.port << "\n";
+        std::cout << "Failed to initialize transport router\n";
         return 1;
     }
 
@@ -38,7 +37,7 @@ int main()
         {
             const FeatureFrame frame = analysisPipeline.processAudioBlock(data, frames, channels, sampleRate);
 
-            udp.send(frame.bass, frame.mid, frame.high);
+            transportRouter.send(frame);
 
             std::cout
                 << "Level: " << frame.masterLevel
@@ -52,14 +51,14 @@ int main()
 
     cap.start();
 
-    std::cout << "Listening to system audio and sending reactive values to "
-        << options.transport.host << ":" << options.transport.port << "\n";
+    std::cout << "Listening to system audio and sending reactive values via "
+        << transportRouter.describeActiveTransports() << "\n";
     std::cout << "Press ENTER to quit\n";
 
     std::cin.get();
 
     cap.stop();
-    udp.shutdown();
+    transportRouter.shutdown();
 
     return 0;
 }
