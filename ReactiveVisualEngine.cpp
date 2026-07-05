@@ -40,11 +40,11 @@ int main()
             transportRouter.send(frame);
 
             std::cout
-                << "Level: " << frame.masterLevel
-                << "  Bass: " << frame.bass
-                << "  Mid: " << frame.mid
-                << "  High: " << frame.high
-                << "  Onset: " << frame.onset
+                << "Drive: " << frame.macroDrive
+                << "  Hit: " << frame.macroHit
+                << "  Sync: " << frame.macroSync
+                << "  Density: " << frame.macroDensity
+                << "  Tone: " << frame.macroTone
                 << "  BPM: " << frame.bpm
                 << "  Conf: " << frame.bpmConfidence
                 << "  Beat: " << frame.beatPhase

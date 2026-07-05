@@ -74,7 +74,13 @@
     <ClInclude Include="Headers\analysis\modules\BeatClock.h">
       <Filter>Headers\analysis\modules</Filter>
     </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\MacroComposer.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
     <ClInclude Include="Headers\analysis\modules\OnsetDetector.h">
+      <Filter>Headers\analysis\modules</Filter>
+    </ClInclude>
+    <ClInclude Include="Headers\analysis\modules\SpectralDynamicsAnalyzer.h">
       <Filter>Headers\analysis\modules</Filter>
     </ClInclude>
     <ClInclude Include="Headers\analysis\modules\TempoEstimator.h">

@@ -141,7 +141,9 @@
     <ClInclude Include="Headers\analysis\FeatureFrame.h" />
     <ClInclude Include="Headers\analysis\modules\BandEnergyAnalyzer.h" />
     <ClInclude Include="Headers\analysis\modules\BeatClock.h" />
+    <ClInclude Include="Headers\analysis\modules\MacroComposer.h" />
     <ClInclude Include="Headers\analysis\modules\OnsetDetector.h" />
+    <ClInclude Include="Headers\analysis\modules\SpectralDynamicsAnalyzer.h" />
     <ClInclude Include="Headers\analysis\modules\TempoEstimator.h" />
     <ClInclude Include="Headers\app\RuntimeOptions.h" />
     <ClInclude Include="Headers\dsp\EnvelopeFollower.h" />

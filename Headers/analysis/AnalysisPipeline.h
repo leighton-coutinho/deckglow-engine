@@ -8,7 +8,9 @@
 #include "Headers/analysis/FeatureFrame.h"
 #include "Headers/analysis/modules/BandEnergyAnalyzer.h"
 #include "Headers/analysis/modules/BeatClock.h"
+#include "Headers/analysis/modules/MacroComposer.h"
 #include "Headers/analysis/modules/OnsetDetector.h"
+#include "Headers/analysis/modules/SpectralDynamicsAnalyzer.h"
 #include "Headers/analysis/modules/TempoEstimator.h"
 #include "Headers/dsp/AudioBuffer.h"
 
@@ -45,9 +47,11 @@ public:
         AudioBuffer::downmixToMono(interleaved, frames, channels, m_mono);
 
         FeatureFrame frame = m_bandEnergyAnalyzer.processBlock(m_mono, context);
+        m_spectralDynamicsAnalyzer.process(m_mono, frame, context);
         m_onsetDetector.process(frame, context);
         m_tempoEstimator.process(frame, context);
         m_beatClock.process(frame, context);
+        m_macroComposer.process(frame, context);
         m_totalFrames += frames;
 
         return frame;
@@ -59,7 +63,9 @@ private:
     std::uint64_t m_blockCounter = 0;
     std::uint64_t m_totalFrames = 0;
     BandEnergyAnalyzer m_bandEnergyAnalyzer;
+    SpectralDynamicsAnalyzer m_spectralDynamicsAnalyzer;
     OnsetDetector m_onsetDetector;
     TempoEstimator m_tempoEstimator;
     BeatClock m_beatClock;
+    MacroComposer m_macroComposer;
 };

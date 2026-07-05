@@ -538,6 +538,12 @@ Suggested addresses:
 /rve/v2/meta/frame_id
 /rve/v2/meta/timestamp
 
+/rve/v2/macro/drive
+/rve/v2/macro/hit
+/rve/v2/macro/sync
+/rve/v2/macro/density
+/rve/v2/macro/tone
+
 /rve/v2/audio/master_level
 /rve/v2/audio/bass
 /rve/v2/audio/mid
@@ -564,6 +570,9 @@ Suggested addresses:
 /rve/v2/structure/silence
 ```
 
+Default TouchDesigner scenes should use the `macro/*` channels as their primary control surface.
+The lower-level `audio/*`, `tempo/*`, and `structure/*` channels remain available for debugging and advanced scene design.
+
 ### Transport Rules
 
 - Send one OSC bundle per analysis tick.
@@ -571,6 +580,14 @@ Suggested addresses:
 - All normalized visual-driving values should be `0..1`.
 - BPM should be absolute.
 - Pulse values should be edge-friendly for TouchDesigner logic operators.
+
+### Default Macro Roles
+
+- `macro/drive`: sustained body energy for translation, scale drift, brightness body, or base motion amplitude
+- `macro/hit`: short transient impact for flashes, zoom punches, bloom spikes, and cut accents
+- `macro/sync`: beat-locked motion lane for oscillation phase, scan position, rotation cycles, or repeating sweeps
+- `macro/density`: busyness control for noise opacity, distortion amount, particle count, or texture complexity
+- `macro/tone`: slow timbral mood for palette selection, blur-vs-sharpen balance, or warm-vs-cold scene bias
 
 ### Temporary Compatibility Layer
 

@@ -34,4 +34,10 @@ struct FeatureFrame
     float breakdownLikelihood = 0.0f;
     float dropLikelihood = 0.0f;
     float silence = 0.0f;
+
+    float macroDrive = 0.0f;
+    float macroHit = 0.0f;
+    float macroSync = 0.0f;
+    float macroDensity = 0.0f;
+    float macroTone = 0.0f;
 };

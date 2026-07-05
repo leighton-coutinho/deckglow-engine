@@ -110,7 +110,7 @@ private:
         };
 
         std::vector<std::vector<std::uint8_t>> messages;
-        messages.reserve(23);
+        messages.reserve(29);
 
         messages.push_back(OscSender::buildIntMessage(
             address("/meta/frame_id"),
@@ -118,6 +118,12 @@ private:
         messages.push_back(OscSender::buildFloatMessage(
             address("/meta/timestamp"),
             static_cast<float>(frame.timestampSeconds)));
+
+        messages.push_back(OscSender::buildFloatMessage(address("/macro/drive"), frame.macroDrive));
+        messages.push_back(OscSender::buildFloatMessage(address("/macro/hit"), frame.macroHit));
+        messages.push_back(OscSender::buildFloatMessage(address("/macro/sync"), frame.macroSync));
+        messages.push_back(OscSender::buildFloatMessage(address("/macro/density"), frame.macroDensity));
+        messages.push_back(OscSender::buildFloatMessage(address("/macro/tone"), frame.macroTone));
 
         messages.push_back(OscSender::buildFloatMessage(address("/audio/master_level"), frame.masterLevel));
         messages.push_back(OscSender::buildFloatMessage(address("/audio/bass"), frame.bass));
