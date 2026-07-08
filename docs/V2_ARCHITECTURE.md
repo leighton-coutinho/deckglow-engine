@@ -4,6 +4,8 @@
 
 This document turns the current prototype into a concrete v2 plan for this exact repo.
 
+For the concrete TouchDesigner-side runtime and module/slot structure that builds on the macro bus, see [HYBRID_RUNTIME_ARCHITECTURE.md](C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/docs/HYBRID_RUNTIME_ARCHITECTURE.md).
+
 The goal is to evolve the project from:
 
 - "3 audio values driving one TouchDesigner patch"
