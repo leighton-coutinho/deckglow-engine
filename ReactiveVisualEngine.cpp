@@ -1,4 +1,4 @@
-// ReactiveVisualEngine.cpp : This file contains the 'main' function. Program execution begins and ends there.
+// ReactiveVisualEngine.cpp : This file contains the 'main' function. Program execution begins and ends there. (Will add frontend later)
 //
 
 #include <iomanip>
