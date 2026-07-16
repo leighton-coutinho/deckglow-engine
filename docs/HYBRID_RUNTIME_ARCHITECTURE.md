@@ -2,6 +2,9 @@
 
 This document defines the concrete TouchDesigner-side runtime for the macro-driven DJ visual system.
 
+The exact authoring and validation contract for modules loaded by this runtime
+is defined in [SCENE_MODULE_SPEC.md](SCENE_MODULE_SPEC.md).
+
 It is intentionally biased toward:
 
 - small club and projector use
@@ -145,6 +148,7 @@ body_level
 body_drift
 impact_fast
 impact_wide
+impact_trigger
 sync_phase
 sync_sine
 sync_triangle
@@ -182,6 +186,12 @@ blackout_gate
 - longer impact envelope
 - derived from a softened version of `hit`
 - use for zoom punches, ripple growth, streak persistence
+
+`impact_trigger`
+
+- one-frame, debounced event pulse
+- derived centrally from `hit`
+- use for discrete spawns such as balls, rings, and particle bursts
 
 `sync_phase`
 
@@ -243,6 +253,8 @@ blackout_gate
 ### Motion Adapter Rules
 
 - scenes should never read `hit` directly if an `impact_*` lane exists
+- event-spawning modules should use `impact_trigger` instead of deriving their
+  own hit threshold
 - scenes should never derive their own beat oscillators if `sync_*` lanes exist
 - scenes should not use `tone` to drive large geometry changes
 - branding should use `brand_pulse`, not raw `hit`
@@ -607,7 +619,7 @@ This runtime architecture changes how the project should evolve:
 
 Suggested next implementation docs:
 
-- `SCENE_MODULE_SPEC.md`
+- [SCENE_MODULE_SPEC.md](SCENE_MODULE_SPEC.md)
 - `PACK_FORMAT_SPEC.md`
 - `FRONTEND_MESSAGE_CONTRACT.md`
 
