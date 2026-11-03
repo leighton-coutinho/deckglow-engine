@@ -253,6 +253,7 @@ body_drift
 impact_fast
 impact_wide
 impact_trigger
+sync_level
 sync_phase
 sync_sine
 sync_triangle
@@ -270,6 +271,17 @@ All unipolar lanes use `0..1`. `sync_sine` is bipolar and uses `-1..1`.
 `impact_trigger` is a one-frame, debounced pulse created centrally by the
 motion adapter. Event-spawning modules must use this lane instead of performing
 their own threshold detection on `hit` or `impact_fast`.
+
+`sync_level` is a shaped rhythmic envelope and `sync_phase` is a rising ramp
+that wraps once per beat. Neither is derivable from the other, so a module that
+needs beat position must read `sync_phase` and must not reconstruct phase from
+`sync_level`.
+
+The motion adapter guarantees that `sync_phase` always advances. When the
+engine's tempo estimate is unreliable, the adapter substitutes a free-running
+ramp at the last usable tempo, so a module never observes a stalled phase.
+Tempo confidence is not a lane; modules must not implement their own tempo
+fallback.
 
 Forward-compatibility rules:
 

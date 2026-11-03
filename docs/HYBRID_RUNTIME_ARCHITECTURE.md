@@ -99,7 +99,19 @@ The runtime should treat the engine as an external service that provides:
 /rve/v2/macro/tone
 ```
 
-Raw channels such as `/audio/*`, `/tempo/*`, and `/structure/*` remain available in `/debug`, but the default runtime should not depend on them for scene behavior.
+`/engine_in` additionally consumes three timing channels on behalf of the motion adapter:
+
+```text
+/rve/v2/tempo/beat_phase
+/rve/v2/tempo/bar_phase
+/rve/v2/tempo/confidence
+```
+
+These are private to `/engine_in` and `/motion_adapter`. The five macros remain the only public creative surface, and scenes still receive standardized motion lanes rather than raw OSC channels.
+
+The macros alone cannot supply beat position. `macro/sync` is a smoothed, non-monotonic envelope, so phase cannot be recovered from it. `confidence` is required because the engine holds its last beat phase when its tempo estimate is unreliable, which the adapter must detect in order to free-run `sync_phase` instead of passing a frozen value to scenes.
+
+The remaining `/audio/*`, `/tempo/*`, and `/structure/*` channels stay available in `/debug`, and no scene module should depend on them for behavior.
 
 ## Macro Bus
 
@@ -149,6 +161,7 @@ body_drift
 impact_fast
 impact_wide
 impact_trigger
+sync_level
 sync_phase
 sync_sine
 sync_triangle
@@ -193,10 +206,18 @@ blackout_gate
 - derived centrally from `hit`
 - use for discrete spawns such as balls, rings, and particle bursts
 
+`sync_level`
+
+- shaped rhythmic envelope
+- passes through the engine `sync` macro
+- use for pulsing brightness, scale throb, or any beat-felt amount
+
 `sync_phase`
 
-- repeating `0..1` timing lane
-- derived from `sync`
+- repeating `0..1` ramp that wraps once per beat
+- derived from the engine's beat phase, not from `sync`
+- free-runs at the last usable tempo when tempo confidence is low, so it never
+  stalls mid-sweep
 - use for sweeps, scanner positions, repeated oscillators
 
 `sync_sine`
@@ -212,7 +233,7 @@ blackout_gate
 `sync_bar_env`
 
 - slower rhythmic accent envelope
-- derived from smoothed sync peaks
+- derived from the engine's bar phase, decaying across the start of each bar
 - use for stronger phrase-like movement without exposing raw bar pulses
 
 `texture_level`
@@ -256,6 +277,10 @@ blackout_gate
 - event-spawning modules should use `impact_trigger` instead of deriving their
   own hit threshold
 - scenes should never derive their own beat oscillators if `sync_*` lanes exist
+- scenes should not reconstruct beat position from `sync_level`; `sync_phase` is
+  the only phase lane
+- scenes should not implement their own tempo fallback, because the adapter
+  already guarantees `sync_phase` keeps advancing
 - scenes should not use `tone` to drive large geometry changes
 - branding should use `brand_pulse`, not raw `hit`
 
