@@ -256,14 +256,20 @@ HYBRID_RUNTIME_ARCHITECTURE).
   global control. It survived the §9.1 cleanup because it selects rather than
   scales, so it does not have the double-multiply problem — but the overlap
   should be resolved before Block 8 freezes the contract.
-- **Resolution anomaly, probably explained.** The stub reported 1280×720 while
-  `Outputwidth`/`Outputheight` requested 1920×1080. Ruled out: the parameters
-  (verified correct in the saved `.tox`), expression evaluation (`resolutionw`
-  evaluates to 1920), the global res multiplier (1X), and `resmult` (off).
-  Every measurement was taken on a TOP that nothing was requesting — see
-  *TouchDesigner cooks lazily* above — so the likely answer is that it reported
-  a default because it had never rendered. **Check this first:** with the
-  viewer flag on, re-read the resolution before investigating anything else.
+- **Resolution anomaly, unresolved.** The stub renders 1280×720 while
+  `Outputwidth`/`Outputheight` request 1920×1080. Everything checks out and
+  the following are all ruled out, so do not re-test them:
+  the parameters (verified by expanding the saved `.tox`: `outputresolution 0
+  custom`, `resolutionw 17 … parent(2).par.Outputwidth`, `resmult 0 off`),
+  expression evaluation (`resolutionw.eval()` returns 1920, mode is
+  `ParMode.EXPRESSION`), the menu (`menuIndex 9` is genuinely `custom`), the
+  global res multiplier (Preferences > TOPs reads 1X), `resmult`, literal
+  1920×1080 values in place of the expressions, `cook(force=True)`, and the
+  viewer-active flag (the TOP visibly renders and still reports 720p).
+  Not yet tried: a bare Constant TOP outside any module, which would separate
+  "environmental" from "something about the module context". Does not block
+  anything — the contract's resolution check is just not meaningful until it
+  is understood.
 - **Scripts hardcode absolute paths** containing a username. Fine on one
   machine; derive from `project.folder` when a second machine appears.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.
