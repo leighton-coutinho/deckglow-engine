@@ -13,7 +13,12 @@ ROOT = op('/project1')
 NAME = 'module_host'
 
 existing = ROOT.op(NAME)
+carried = {}
 if existing:
+    for nm in ('Modulepath', 'Moduletype'):
+        p = getattr(existing.par, nm, None)
+        if p is not None:
+            carried[nm] = p.eval()
     existing.destroy()
 
 host = ROOT.create(baseCOMP, NAME)
@@ -33,7 +38,9 @@ for i, (nm, kind) in enumerate(ins):
     o.nodeX, o.nodeY = 0, -i * 200
 
 black = host.create(constantTOP, 'black')
-black.par.color = (0, 0, 0)
+black.par.colorr = 0
+black.par.colorg = 0
+black.par.colorb = 0
 black.par.alpha = 1
 black.nodeX, black.nodeY = 400, -1200
 
@@ -144,7 +151,13 @@ def Load():
     m = h.create(baseCOMP, 'module')
     m.nodeX, m.nodeY = 400, 0
     try:
-        m.loadTox(path)
+        # externaltox makes this COMP *be* the tox root. loadTox is a fallback
+        # because it can nest the tox as a child instead of replacing contents.
+        m.par.externaltox = path
+        m.par.enableexternaltox = True
+        m.par.enableexternaltoxpulse.pulse()
+        if m.op('out1') is None:
+            m.loadTox(path)
     except Exception as e:
         m.destroy()
         _status('error: load failed - %s' % e)
@@ -162,7 +175,21 @@ def Load():
     if hasattr(m.par, 'Reset'):
         m.par.Reset.pulse()
 
-    h.op('module_null').inputConnectors[0].connect(m)
+    # Spec s12 steps 6-7: warm the module before wiring its output and
+    # validating. An external tox initialises late, so both outputConnectors
+    # and out1's resolution read stale if queried right now.
+    _status('loading')
+    run("op('%s').module.Finish()" % me.path, delayFrames=2)
+
+
+def Finish():
+    h = _host()
+    m = Module()
+    if m:
+        # a COMP is not a valid source; connect to its output connector
+        outs = m.outputConnectors
+        if outs:
+            h.op('module_null').inputConnectors[0].connect(outs[0])
     Refresh()
     _status(Validate())
 
@@ -193,6 +220,11 @@ def Refresh():
     bp.inputConnectors[0].disconnect()
     bp.inputConnectors[0].connect(src)
 
+    # keep module_null fed so an idle host shows no error badge
+    mn = h.op('module_null')
+    if not Module() and not mn.inputConnectors[0].connections:
+        mn.inputConnectors[0].connect(h.op('black'))
+
     live = bool(Module()) and bool(h.par.Moduleactive.eval())
     h.op('out_switch').par.index = 0 if live else 1
 
@@ -203,7 +235,8 @@ def Validate():
         return 'error: module did not load'
     out = m.op('out1')
     if out is None:
-        return 'error: module has no out1'
+        kids = ','.join(c.name for c in m.children) or 'none'
+        return 'error: no out1 (children: %s)' % kids
     if out.family != 'TOP':
         return 'error: out1 is %s, expected TOP' % out.family
     missing = [n for n in STANDARD if getattr(m.par, n, None) is None]
@@ -247,6 +280,9 @@ def onPulse(par):
     return
 '''
 
+for nm, value in carried.items():
+    getattr(host.par, nm).val = value
+
 # --------------------------------------------------------- host wiring
 motion = ROOT.op('MOTION_OUT')
 if motion:
@@ -255,5 +291,12 @@ if motion:
 host.op('host').module.Refresh()
 
 print('module_host built at', host.path)
-print('inputs:', [c.name for c in host.inputConnectors])
-print('status:', host.par.Status.eval())
+try:
+    conns = host.inputConnectors
+    print('input connectors:', len(conns))
+    print('in operators:', sorted(o.name for o in host.children
+                                  if o.name.startswith('in')))
+    print('motion wired:', bool(conns[1].connections) if len(conns) > 1 else False)
+    print('status:', host.par.Status.eval())
+except Exception as e:
+    print('(diagnostics unavailable: %s)' % e)

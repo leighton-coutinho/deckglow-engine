@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# TouchDesigner incremental saves - only the canonical .toe is tracked
+touchDesigner/*.[0-9].toe
+touchDesigner/*.[0-9][0-9].toe
