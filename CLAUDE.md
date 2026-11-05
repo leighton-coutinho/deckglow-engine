@@ -178,6 +178,22 @@ two-frame warm-up ([SCENE_MODULE_SPEC.md §12](docs/SCENE_MODULE_SPEC.md) steps
 6–7) exists for this. `module_host` defers wiring and validation into a
 `Finish()` called via `run(..., delayFrames=2)`. Do the same for anything new.
 
+### TouchDesigner cooks lazily — "no output" is usually "nothing asked for it"
+
+TouchDesigner only evaluates operators something needs. A terminal node with
+nothing downstream — no display, no window, no export, no active viewer — may
+never cook, so it renders nothing and reports default properties.
+
+`module_host/out1` is exactly this case: it is the end of the chain and nothing
+consumes it yet (the `/output` layer is Block 6). **To see it, click the small
+blue circle at the node tile's bottom-right — the viewer-active flag.** That
+creates the cook request.
+
+If someone reports "the output is black", check this before debugging the
+chain. It cost a round here. The same applies to any property read off an
+un-cooked TOP: width, height and connector lists can all report defaults.
+`diagnose_module_host.py` reads live values and is the faster check either way.
+
 ## Remaining work
 
 From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
@@ -240,13 +256,14 @@ HYBRID_RUNTIME_ARCHITECTURE).
   global control. It survived the §9.1 cleanup because it selects rather than
   scales, so it does not have the double-multiply problem — but the overlap
   should be resolved before Block 8 freezes the contract.
-- **Resolution anomaly, unresolved.** The stub renders 1280×720 while
-  `Outputwidth`/`Outputheight` request 1920×1080. Ruled out: the parameters
+- **Resolution anomaly, probably explained.** The stub reported 1280×720 while
+  `Outputwidth`/`Outputheight` requested 1920×1080. Ruled out: the parameters
   (verified correct in the saved `.tox`), expression evaluation (`resolutionw`
-  evaluates to 1920), the global res multiplier (set to 1X), and `resmult`
-  (now off). Literal 1920×1080 values still produce a 720p texture, so it is
-  environmental rather than anything the module controls. Does not block
-  anything; revisit in Block 3 where real geometry makes it visible.
+  evaluates to 1920), the global res multiplier (1X), and `resmult` (off).
+  Every measurement was taken on a TOP that nothing was requesting — see
+  *TouchDesigner cooks lazily* above — so the likely answer is that it reported
+  a default because it had never rendered. **Check this first:** with the
+  viewer flag on, re-read the resolution before investigating anything else.
 - **Scripts hardcode absolute paths** containing a username. Fine on one
   machine; derive from `project.folder` when a second machine appears.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.
