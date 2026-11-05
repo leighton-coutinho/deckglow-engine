@@ -1,0 +1,20 @@
+{
+  "schema": "deckglow.scene-module/1",
+  "id": "com.deckglow.stub",
+  "type": "base_scene",
+  "displayName": "Stub Scene",
+  "author": "DeckGlow",
+  "version": "0.1.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "entry": "module.tox",
+  "thumbnail": "thumbnail.png",
+  "performanceTier": "light",
+  "tags": ["test", "flat"],
+  "controls": [],
+  "description": "Flat colour test fixture: red from body_level, green from sync_phase, blue from texture_level. Exists to exercise the module host, not to look good.",
+  "capabilities": {
+    "usesPython": false,
+    "usesAudioFileIn": false,
+    "supportsAlphaAssets": false
+  }
+}
