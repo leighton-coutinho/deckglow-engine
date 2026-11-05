@@ -197,6 +197,33 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
 
+## Decisions made
+
+**Performer controls live in the motion adapter, not in modules** (2026-11-04).
+
+The adapter applies `masterIntensity`, `motionAmount`, `flashAmount`,
+`textureAmount`, `toneAmount` and `brandAmount` once, before a module sees a
+lane. Modules receive pre-scaled lanes and expose no matching parameters.
+`Motionamount`/`Textureamount`/`Toneamount` (base scene), `Flashamount`
+(hit fx) and `Brandpulseamount` (brand overlay) were removed from the spec —
+a control at both levels meant a performer at `0.5` and a module at `0.5`
+silently produced `0.25`.
+
+Chosen over the alternative (runtime pushes values into each module's
+parameters) because the runtime then guarantees a performer control works
+regardless of module quality, which matters once creator packs ship modules the
+runtime did not author. Written up in
+[SCENE_MODULE_SPEC.md §9.1](docs/SCENE_MODULE_SPEC.md).
+
+**Still to implement.** The control channels do not exist yet; `motion_adapter`
+currently passes lanes through unscaled. Build them before Block 3 so
+`kinetic_stripes` — the reference every later module gets copied from — is
+written against final lane semantics. They belong between `ENGINE_INPUT` and
+`motion_adapter`, as a Constant CHOP of control values merged with the engine
+channels, with the lane maths in `motion_adapter` updated to multiply
+(`body_level = drive * masterIntensity`, and so on per the lane definitions in
+HYBRID_RUNTIME_ARCHITECTURE).
+
 ## Open decisions and known gaps
 
 - **Fallback tempo mismatch.** Both runtime docs say `sync_phase` free-runs "at
@@ -205,10 +232,14 @@ controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
   into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
 - **No output clamp** in `motion_adapter`. Spec says clamp every lane except
   `sync_sine`. Nothing is currently out of range, so it is latent.
-- **User control channels** (`masterIntensity`, `motionAmount`, `textureAmount`…)
-  do not exist. The lane definitions in HYBRID_RUNTIME_ARCHITECTURE assume them.
-  They belong between `ENGINE_INPUT` and `motion_adapter`. Worth doing before
-  Block 3 so scenes are built against final lane semantics.
+- **Where performer controls are surfaced.** Decided that the adapter applies
+  them, but not yet how a DJ sets them — a TouchDesigner UI panel, MIDI, or an
+  external frontend. V2_ARCHITECTURE block 6 covers this; nothing depends on it
+  until then.
+- **`Paletteindex` is still per-module** while `paletteIndex` also exists as a
+  global control. It survived the §9.1 cleanup because it selects rather than
+  scales, so it does not have the double-multiply problem — but the overlap
+  should be resolved before Block 8 freezes the contract.
 - **Resolution anomaly, unresolved.** The stub renders 1280×720 while
   `Outputwidth`/`Outputheight` request 1920×1080. Ruled out: the parameters
   (verified correct in the saved `.tox`), expression evaluation (`resolutionw`

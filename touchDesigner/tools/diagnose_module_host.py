@@ -47,7 +47,7 @@ else:
         show('module out1 res', lambda: '%dx%d' % (m.op('out1').width, m.op('out1').height))
         show('par Outputwidth', lambda: m.par.Outputwidth.eval())
         show('par Intensity', lambda: m.par.Intensity.eval())
-        show('par Motionamount', lambda: m.par.Motionamount.eval())
+        show('par Paletteindex', lambda: m.par.Paletteindex.eval())
         show('errors', lambda: m.errors() or '(none)')
 
         b = m.op('render/base')

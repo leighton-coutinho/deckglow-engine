@@ -276,6 +276,9 @@ blackout_gate
 - scenes should never read `hit` directly if an `impact_*` lane exists
 - event-spawning modules should use `impact_trigger` instead of deriving their
   own hit threshold
+- the adapter is the only place performer controls are applied; modules receive
+  lanes that are already scaled and must not re-apply `masterIntensity`,
+  `motionAmount`, `flashAmount`, `textureAmount`, `toneAmount` or `brandAmount`
 - scenes should never derive their own beat oscillators if `sync_*` lanes exist
 - scenes should not reconstruct beat position from `sync_level`; `sync_phase` is
   the only phase lane
@@ -353,10 +356,9 @@ Required output:
 Required custom parameters:
 
 - `Intensity`
-- `Motionamount`
-- `Textureamount`
-- `Toneamount`
 - `Paletteindex`
+
+Motion, texture and tone scaling is applied by `/motion_adapter`, not here.
 
 Restrictions:
 
@@ -389,10 +391,11 @@ Required output:
 
 Required custom parameters:
 
-- `Flashamount`
 - `Fxamount`
 - `Blendmode`
 - `Colorize`
+
+Flash scaling is applied by `/motion_adapter`, not here.
 
 Restrictions:
 
@@ -429,7 +432,8 @@ Required custom parameters:
 - `Nameopacity`
 - `Placement`
 - `Safearea`
-- `Brandpulseamount`
+
+Brand pulse scaling is applied by `/motion_adapter`, not here.
 
 Restrictions:
 

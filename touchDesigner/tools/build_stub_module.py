@@ -57,12 +57,8 @@ p.val = 1080
 # --------------------------------------------------- base_scene parameters
 scene = stub.appendCustomPage('Scene')
 
-for name in ('Motionamount', 'Textureamount', 'Toneamount'):
-    p = scene.appendFloat(name)[0]
-    p.default = 1
-    p.normMin, p.normMax = 0, 1
-    p.val = 1
-
+# No Motionamount/Textureamount/Toneamount: performer controls are applied
+# once by /motion_adapter and arrive already scaled (spec s9.1).
 p = scene.appendInt('Paletteindex')[0]
 p.default = 0
 p.min = 0
@@ -100,10 +96,8 @@ base.par.resmult = False
 base.par.resolutionw.expr = 'parent(2).par.Outputwidth'
 base.par.resolutionh.expr = 'parent(2).par.Outputheight'
 base.par.colorr.expr = lane('body_level') + ' * parent(2).par.Intensity'
-base.par.colorg.expr = (lane('sync_phase')
-                        + ' * parent(2).par.Motionamount * parent(2).par.Intensity')
-base.par.colorb.expr = (lane('texture_level')
-                        + ' * parent(2).par.Textureamount * parent(2).par.Intensity')
+base.par.colorg.expr = lane('sync_phase') + ' * parent(2).par.Intensity'
+base.par.colorb.expr = lane('texture_level') + ' * parent(2).par.Intensity'
 base.par.alpha = 1
 
 rout = render.create(outTOP, 'out1')

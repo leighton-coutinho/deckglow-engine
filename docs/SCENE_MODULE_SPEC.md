@@ -357,6 +357,28 @@ Rules:
 - non-base modules preserve their input dimensions; `Outputwidth` and
   `Outputheight` remain present for a uniform API
 
+### 9.1 Performer controls are global
+
+The DJ-facing amount controls — `masterIntensity`, `motionAmount`,
+`flashAmount`, `textureAmount`, `toneAmount` and `brandAmount` — are applied
+once, by `/motion_adapter`, before a module ever sees a lane. A module receives
+already-scaled lanes and must not re-apply them.
+
+Modules therefore do not expose matching parameters. An earlier draft defined
+`Motionamount`, `Textureamount` and `Toneamount` on base scenes,
+`Flashamount` on hit effects and `Brandpulseamount` on brand overlays. All are
+removed: with a control at both levels a performer at `0.5` and a module at
+`0.5` would silently yield `0.25`.
+
+The reason for choosing the adapter over the module is reliability. The runtime
+guarantees a performer control works regardless of how carefully any given
+module was written, which matters once approved creator packs ship modules the
+runtime did not author.
+
+This does not restrict creative controls (section 11). A module may still
+expose its own shaping parameters; it simply must not duplicate a global
+performer control.
+
 ## 10. Slot Contracts
 
 ### 10.1 Base Scene
@@ -374,10 +396,10 @@ Additional required parameters on a custom page named `Scene`:
 
 | Parameter | Type | Range/default |
 | --- | --- | --- |
-| `Motionamount` | Float | `0..1`, default `1` |
-| `Textureamount` | Float | `0..1`, default `1` |
-| `Toneamount` | Float | `0..1`, default `1` |
 | `Paletteindex` | Integer | minimum `0`, default `0` |
+
+Motion, texture and tone scaling arrive already applied in the lanes; see
+section 9.1.
 
 Behavior:
 
@@ -406,10 +428,13 @@ Additional required parameters on a custom page named `Hit FX`:
 
 | Parameter | Type | Range/default |
 | --- | --- | --- |
-| `Flashamount` | Float | `0..1`, default `0.5` |
 | `Fxamount` | Float | `0..1`, default `1` |
 | `Blendmode` | Menu | `over`, `add`, `screen`, default `over` |
 | `Colorize` | Float | `0..1`, default `1` |
+
+`Flashamount` was removed; flash scaling arrives already applied in the
+`impact_*` lanes (section 9.1). `Fxamount` remains because it scales this
+module's own effect, not a performer control.
 
 Behavior:
 
@@ -446,7 +471,9 @@ Additional required parameters on a custom page named `Brand`:
 | `Nameopacity` | Float | `0..1`, default `1` |
 | `Placement` | Menu | `center`, `top_left`, `top_right`, `bottom_left`, `bottom_right` |
 | `Safearea` | Float | `0..0.25`, default `0.05` |
-| `Brandpulseamount` | Float | `0..1`, default `0.25` |
+
+`Brandpulseamount` was removed; brand scaling arrives already applied in the
+`brand_pulse` lane (section 9.1).
 
 Behavior:
 
