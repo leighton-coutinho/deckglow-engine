@@ -256,20 +256,21 @@ HYBRID_RUNTIME_ARCHITECTURE).
   global control. It survived the §9.1 cleanup because it selects rather than
   scales, so it does not have the double-multiply problem — but the overlap
   should be resolved before Block 8 freezes the contract.
-- **Resolution anomaly, unresolved.** The stub renders 1280×720 while
-  `Outputwidth`/`Outputheight` request 1920×1080. Everything checks out and
-  the following are all ruled out, so do not re-test them:
-  the parameters (verified by expanding the saved `.tox`: `outputresolution 0
-  custom`, `resolutionw 17 … parent(2).par.Outputwidth`, `resmult 0 off`),
-  expression evaluation (`resolutionw.eval()` returns 1920, mode is
-  `ParMode.EXPRESSION`), the menu (`menuIndex 9` is genuinely `custom`), the
-  global res multiplier (Preferences > TOPs reads 1X), `resmult`, literal
-  1920×1080 values in place of the expressions, `cook(force=True)`, and the
-  viewer-active flag (the TOP visibly renders and still reports 720p).
-  Not yet tried: a bare Constant TOP outside any module, which would separate
-  "environmental" from "something about the module context". Does not block
-  anything — the contract's resolution check is just not meaningful until it
-  is understood.
+- **Output is capped at 1280×720 by the TouchDesigner licence, not by a bug.**
+  Non-Commercial TouchDesigner limits resolution to 1280×1280, so a 1920×1080
+  request clamps to 1280 wide preserving aspect — exactly 1280×720. Confirmed
+  by a bare Constant TOP outside any module with literal 1920×1080 parameters
+  and the viewer active, reporting 720p in TouchDesigner's own info popup.
+  Do not re-investigate: the parameters, expressions, menu value, global res
+  multiplier, `resmult`, literal values, forced cooks and the viewer flag were
+  all checked and are all correct.
+
+  **Product implication worth raising with the owner.** The projector target in
+  the architecture docs is 1080p, and [SCENE_MODULE_SPEC.md §15.4](docs/SCENE_MODULE_SPEC.md)
+  makes "output resolution matches the stack" a live admission check. Neither
+  is achievable on Non-Commercial. Shipping at 1080p needs a Commercial or Pro
+  licence. Until then, develop against 1280×720 and treat the resolution check
+  as informational rather than a gate.
 - **Scripts hardcode absolute paths** containing a username. Fine on one
   machine; derive from `project.folder` when a second machine appears.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.
