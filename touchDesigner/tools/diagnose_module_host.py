@@ -1,4 +1,4 @@
-"""Dumps the state of each module host (module_host, hit_host) and its module.
+"""Dumps the state of each module host (module_host, hit_host, brand_host) and its module.
 
 Run inside TouchDesigner's textport (Alt+T):
 
@@ -7,7 +7,7 @@ Run inside TouchDesigner's textport (Alt+T):
 Read-only. Changes nothing.
 """
 
-HOSTS = ['module_host', 'hit_host']
+HOSTS = ['module_host', 'hit_host', 'brand_host']
 
 
 def show(label, fn):
@@ -61,6 +61,22 @@ def dump(name):
         show('orbs alive', lambda: orbs.module.Alive())
         show('orb_fx errors', lambda: m.op('render/orb_fx').errors() or '(none)')
         show('out_switch (0=fx 1=pass)', lambda: m.op('render/out_switch').par.index.eval())
+
+    # clean_lockup specifics
+    lay = m.op('render/layout')
+    if lay:
+        try:
+            L = lay.module.Layout()
+        except Exception as e:
+            L = {}
+            print('  layout failed: %s: %s' % (type(e).__name__, e))
+        show('brand displayName', lambda: repr(lay.module.Brand('displayName', '')))
+        show('mode (after fallback)', lambda: L['mode'])
+        show('logo present', lambda: lay.module.LogoPresent())
+        show('logo rect', lambda: tuple(round(v, 3) for v in L['logo']))
+        show('name rect', lambda: tuple(round(v, 3) for v in L['name']))
+        show('lockup_fx errors', lambda: m.op('render/lockup_fx').errors() or '(none)')
+        show('out_switch (0=shown 1=pass)', lambda: m.op('render/out_switch').par.index.eval())
 
 
 for n in HOSTS:

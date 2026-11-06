@@ -1,18 +1,19 @@
-"""Builds the scene-module wrappers: a two-slot stack, base -> hit.
+"""Builds the scene-module wrappers: a three-slot stack, base -> hit -> brand.
 
-Run inside TouchDesigner's textport (Alt+T):
+Run inside TouchDesigner's textport (Alt+T), after build_brand_source.py:
 
     exec(open(r'C:\\Users\\ljlco\\source\\repos\\CodexProjects\\ReactiveVisualEngineCode\\touchDesigner\\tools\\build_module_host.py').read())
 
-    MOTION_OUT --+-------------------> module_host (base_scene) --+
-                 |                                                 | image
-                 +-------------------> hit_host    (hit_fx)  <-----+
+    MOTION_OUT -> every host's in1_motion
+    module_host (base_scene) -> hit_host (hit_fx) -> brand_host (brand_overlay)
+                                    image              image
+    BRAND -> brand_host in3_brand     LOGO -> brand_host in4_logo
 
-module_host is the Block 2 wrapper; hit_host is the same wrapper in the hit_fx
-slot, taking module_host's output as its image (Block 4). brand_overlay and
-finish_fx slots follow the same pattern when those blocks land.
+module_host is the Block 2 wrapper; hit_host (Block 4) and brand_host
+(Block 5) are the same wrapper in later slots, each taking the previous
+host's output as its image. finish_fx follows the same pattern in Block 6.
 
-Re-running destroys and rebuilds both COMPs, so it is safe to run repeatedly;
+Re-running destroys and rebuilds every host COMP, so it is safe to run repeatedly;
 each carries its Modulepath and Moduletype across rebuilds. Because a rebuild
 reloads nothing, pulse Load on each host afterwards.
 
@@ -191,9 +192,10 @@ def onPulse(par):
 '''
 
 
-def build_host(name, x, y, default_type, image_src=None):
+def build_host(name, x, y, default_type, image_src=None, extra=None):
     """Destroy and rebuild one wrapper. image_src feeds in0_image (a COMP is
-    connected through its output connector, never as a direct source)."""
+    connected through its output connector, never as a direct source).
+    extra maps a host input index to a plain operator, e.g. {3: BRAND}."""
     existing = ROOT.op(name)
     carried = {}
     if existing:
@@ -310,6 +312,8 @@ def build_host(name, x, y, default_type, image_src=None):
         host.inputConnectors[1].connect(motion)
     if image_src is not None:
         host.inputConnectors[0].connect(image_src.outputConnectors[0])
+    for index, src in (extra or {}).items():
+        host.inputConnectors[index].connect(src)
 
     host.op('host').module.Refresh()
 
@@ -320,6 +324,8 @@ def build_host(name, x, y, default_type, image_src=None):
         print('  image wired   :', bool(conns[0].connections),
               '(from %s)' % image_src.name if image_src is not None else '')
         print('  motion wired  :', bool(conns[1].connections) if len(conns) > 1 else False)
+        for index, src in (extra or {}).items():
+            print('  input %d wired :' % index, bool(conns[index].connections), '(from %s)' % src.name)
         print('  Modulepath    :', host.par.Modulepath.eval() or '(none)')
         print('  status        :', host.par.Status.eval())
     except Exception as e:
@@ -329,4 +335,18 @@ def build_host(name, x, y, default_type, image_src=None):
 
 base_host = build_host('module_host', 6400, 0, 'base_scene')
 hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host)
+
+# brand_overlay takes prepared brand data (spec s8.2, s10.3). Host inputs 3
+# and 4 are in3_brand and in4_logo; they reach the module as its connectors 2
+# and 3 through WIRING. BRAND/LOGO come from build_brand_source.py until the
+# branding runtime exists.
+brand_extra = {}
+if ROOT.op('BRAND') is not None:
+    brand_extra[3] = ROOT.op('BRAND')
+if ROOT.op('LOGO') is not None:
+    brand_extra[4] = ROOT.op('LOGO')
+if 3 not in brand_extra:
+    print('WARNING no /project1/BRAND - run build_brand_source.py, then rebuild')
+brand_host = build_host('brand_host', 9600, 0, 'brand_overlay',
+                        image_src=hit_host, extra=brand_extra)
 print('pulse Load on each host to (re)load its module')

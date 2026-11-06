@@ -154,7 +154,58 @@ Without a palette input and with `impact_wide` low, orbs sit at about 60%
 brightness (`persist = 0.6 + 0.4 × impact_wide`), which reads slightly dim in
 the thumbnail. A look tweak, not a fault.
 
-**Blocks 5–8 remain.** See *Remaining work*.
+**Block 5 — `clean_lockup`: done and verified** (2026-11-05).
+
+The stack is now three slots: `module_host` → `hit_host` → `brand_host`
+(brand_overlay). Brand data has no real source yet, so
+`tools/build_brand_source.py` builds a stand-in: `brand_table` → `BRAND`
+(Null DAT, the s8.2 key/value table) and `logo_art` (Text TOP "DG") → `LOGO`
+(Null TOP). `build_module_host.py` wires them into `brand_host`'s
+`in3_brand`/`in4_logo`, which reach the module as its `in2_brand`/`in3_logo`.
+Run the brand source builder first.
+
+```
+in2_brand ─ render/layout  Python: reads keys, computes rects, cached per frame
+              ├─ render/name_text, render/sub_text  Text TOPs sized to on-screen height
+              └─ uniforms on render/lockup_fx
+in0_image, in3_logo, name_text, sub_text ─ render/lockup_fx  GLSL Multi TOP
+                                        └─ render/out_switch  pass-through ─ out1
+```
+
+- `mode` from the brand DAT: `logo`, `name`, `logo_and_name` — tokens the spec
+  did not define, now written into SCENE_MODULE_SPEC §8.2. Without visible logo
+  pixels it falls back to the name. An unwired In TOP still yields a blank
+  texture, so "logo present" tests alpha, at most every 60 frames.
+- Vertical stack (logo, name, subtitle), anchored by `Placement` inside a safe
+  area of `Safearea` × frame height on each edge; shrinks to fit. Default
+  placement is `bottom_right` (the spec gives none).
+- `brand_pulse` brightens by up to `1 + 1.5 × brand_pulse`; never
+  `impact_trigger`.
+- Soft dark backing behind glyphs and logo (8-tap ring, `Backing` control) for
+  legibility on bright and dark images.
+- Name in `primaryColor`, subtitle in `secondaryColor`, logo keeps its colours;
+  brand `opacity` and `scale` apply to all. Declares `usesPython: true`.
+
+The layout module was exercised outside TD with stand-ins (all placements stay
+inside the safe area, no-logo fallback, logo-only centring, scale 5 shrinks to
+fit, unknown mode, empty name, malformed colours/numbers).
+
+Verified in TouchDesigner (2026-11-05), after two fixes found on the first run
+(the Text TOP unit menu labels, and GLSL TOP's three-input limit — both in
+*Getting parameter names and values right*): the export wrote `module.tox`
+with no absolute paths and a thumbnail showing "DG", "DJ NAME" and "LIVE"
+stacked bottom-right. All three hosts load with `Status` `ok: 1280x720` and no
+errors, and the chain runs `module_host` → `hit_host` → `brand_host`. Placement,
+`mode name`, a changed `displayName` and `Intensity 0` all behave by eye; the
+diagnose run showed `mode name` with the logo rect empty and the name centred.
+The saved `.toe`'s `brand_table` holds the owner's test edits
+(`displayName KOUTINHO`, `mode name`), which the brand source builder keeps.
+
+Look notes, not faults: the subtitle at `0.45 ×` name height in secondary blue
+reads small and low-contrast on dark scenes, and the placeholder logo's square
+texture leaves space above and below "DG".
+
+**Blocks 6–8 remain.** See *Remaining work*.
 
 ### Which file is current
 
@@ -178,9 +229,11 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 
 | Script | Purpose |
 | --- | --- |
-| `build_module_host.py` | Builds the slot stack: `/project1/module_host` (base_scene) and `/project1/hit_host` (hit_fx, image from `module_host`). Idempotent; carries `Modulepath`/`Moduletype`. Pulse `Load` on each host after rebuilding. |
+| `build_module_host.py` | Builds the slot stack: `module_host` (base_scene) → `hit_host` (hit_fx) → `brand_host` (brand_overlay, plus `BRAND`/`LOGO`). Idempotent; carries `Modulepath`/`Moduletype`. Pulse `Load` on each host after rebuilding. |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
-| `diagnose_module_host.py` | Read-only state dump of both hosts and their loaded modules, including orb pool and shader state. **Use this before guessing.** |
+| `diagnose_module_host.py` | Read-only state dump of every host and its loaded module, including orb pool, shader and lockup layout state. **Use this before guessing.** |
+| `build_brand_source.py` | Stand-in branding runtime: `/project1/BRAND` (brand DAT) and `/project1/LOGO` (placeholder logo TOP). Keeps edited table rows across rebuilds. Run before `build_module_host.py`. |
+| `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `BRAND`/`LOGO`; waits 70 frames so the logo check has sampled. |
 | `build_orb_burst.py` | Builds and exports `modules/orb_burst/module.tox` and `thumbnail.png`. Checks the shader compiled and the pool produced orbs before saving. |
 | `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
 | `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
@@ -270,6 +323,17 @@ raises `td.tdError: Invalid number or type of arguments`. Use
   Python class docs (`ScriptCHOP_Class.htm`). Mining expanded `.tox` files
   under `Samples\Palette` also works and is how `preop 0 rise`,
   `convert 0 bound` and `outputresolution 0 custom` were first confirmed.
+- **Menu labels are not always what the help text says.** The Text TOP's
+  `fontsizexunit` help reads "Pixels, Fraction, Fraction Aspect or Points",
+  but its live `menuLabels` are `px`, `f`, `a`, `pt`. When setting a menu
+  whose token is unknown, match against both `menuNames` and `menuLabels` and
+  accept several spellings (`menu_pick` in `build_brand_source.py`), and let
+  it raise with the real options listed — that is how this was found.
+- **The GLSL TOP has exactly three inputs.** Connecting a fourth raises
+  `IndexError: list index out of range` on `inputConnectors[3]`. Use the GLSL
+  Multi TOP (`glslmultiTOP`) for more — same pixel shader, Vectors and Arrays
+  parameters. Multi-input ops expose one spare connector at a time, so fall
+  back to `src.outputConnectors[0].connect(dst)` and check `dst.inputs`.
 - **A Script CHOP only cooks when its inputs change** unless its callbacks
   return `CookLevel.WHEN_USED` (every frame while used) from
   `onGetCookLevel`. Anything time-based — fades, lifetimes — needs that.
@@ -307,10 +371,10 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 
 3. ~~`kinetic_stripes`~~ — done (see *Current state*).
 4. ~~`orb_burst`~~ — done (see *Current state*).
-5. **`clean_lockup`** — `brand_overlay` with logo, name and combined modes.
-   **This is the next block.** Needs a prepared brand DAT and logo TOP source,
-   and a third host slot fed from `hit_host`.
+5. ~~`clean_lockup`~~ — done (see *Current state*).
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
+   **This is the next block.** Needs a fourth host slot fed from `brand_host`
+   and the first `/output` layer.
 7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
 

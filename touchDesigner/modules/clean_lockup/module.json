@@ -1,0 +1,48 @@
+{
+  "schema": "deckglow.scene-module/1",
+  "id": "com.deckglow.clean_lockup",
+  "type": "brand_overlay",
+  "displayName": "Clean Lockup",
+  "author": "DeckGlow",
+  "version": "1.0.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "entry": "module.tox",
+  "thumbnail": "thumbnail.png",
+  "performanceTier": "light",
+  "tags": ["branding", "logo", "minimal"],
+  "controls": [
+    {
+      "parameter": "Logosize",
+      "label": "Logo Size",
+      "type": "float",
+      "min": 0.05,
+      "max": 0.6,
+      "default": 0.22,
+      "group": "Layout"
+    },
+    {
+      "parameter": "Textsize",
+      "label": "Text Size",
+      "type": "float",
+      "min": 0.02,
+      "max": 0.25,
+      "default": 0.08,
+      "group": "Layout"
+    },
+    {
+      "parameter": "Backing",
+      "label": "Backing",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "group": "Legibility"
+    }
+  ],
+  "description": "Logo, name and subtitle stacked in a corner or the centre, inside a safe area, with a soft backing for legibility and a restrained brightness pulse.",
+  "capabilities": {
+    "usesPython": true,
+    "usesAudioFileIn": false,
+    "supportsAlphaAssets": true
+  }
+}

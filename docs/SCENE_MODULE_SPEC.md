@@ -330,6 +330,11 @@ opacity         1.0
 Required keys are `displayName`, `mode`, `scale`, and `opacity`. Empty text is
 valid. Unknown keys must be ignored.
 
+`mode` is one of `logo`, `name` or `logo_and_name`. A module treats an
+unknown value as `logo_and_name`, and falls back to the name when `logo` or
+`logo_and_name` is requested without a usable logo image. Colours are
+comma-separated `r,g,b,a` in `0..1`.
+
 `in3_logo` receives a prepared logo TOP from the branding runtime. The module
 does not open the user's logo path directly.
 
