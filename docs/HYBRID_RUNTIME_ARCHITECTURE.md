@@ -84,7 +84,12 @@ Each layer has one job:
 - `/scene_runtime`: load, warm, blend, and unload active visual modules
 - `/scene_library`: discover installed scenes, hit effects, and brand styles
 - `/ui`: local TouchDesigner control surface and optional bridge to external frontend
-- `/output`: final safety clamp, projector-safe finishing, and display routing
+- `/output`: final safety clamp, projector-safe finishing, and display routing.
+  It also limits full-frame flashing for photosensitivity: at most three
+  general flashes per second by default (an opposing luminance change of 10%
+  or more with the darker side below 0.80), enforced by dimming only. It is on
+  by default; turning it off is a deliberate per-venue decision, and no module
+  can bypass it
 - `/debug`: raw channel inspection and performance diagnostics
 
 ## Engine Input Contract

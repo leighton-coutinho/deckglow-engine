@@ -103,6 +103,13 @@ def dump_output():
     show('Maxbrightness', lambda: o.par.Maxbrightness.eval())
     show('Blackout', lambda: o.par.Blackout.eval())
     show('OUTPUT res', lambda: '%dx%d' % (op('/project1/OUTPUT').width, op('/project1/OUTPUT').height))
+    lim = o.op('limiter')
+    print('FLASH LIMITER')
+    show('Flashlimit / Maxflashes', lambda: (o.par.Flashlimit.eval(), o.par.Maxflashes.eval()))
+    if lim:
+        for ch in ('luma', 'shown', 'gain', 'transitions', 'held'):
+            show(ch, lambda ch=ch: round(lim[ch].eval(), 4))
+        show('limiter errors', lambda: lim.errors() or '(none)')
 
 
 for n in HOSTS:

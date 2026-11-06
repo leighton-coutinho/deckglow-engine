@@ -247,8 +247,8 @@ module_host → hit_host → brand_host → finish_host → output → OUTPUT
 `/project1/output` (built by `build_module_host.py`, not a module): a GLSL TOP
 that turns NaN/Inf to black, hard-clamps to `0..1`, multiplies by the
 `blackout_gate` lane (1 when absent), a `Maxbrightness` ceiling and a manual
-`Blackout` toggle, and forces alpha to 1. Both custom parameters carry across
-rebuilds. It sits after `finish_host`, so a bypassed finish module can never
+`Blackout` toggle, and forces alpha to 1 — then the flash limiter (see
+*Decisions made*). All four custom parameters carry across rebuilds. It sits after `finish_host`, so a bypassed finish module can never
 skip it (spec §10.4). **Display routing — a Window COMP to the projector — is
 not built yet**; `OUTPUT` is where it will read from. Like every chain end,
 `OUTPUT` only cooks when something views it.
@@ -525,6 +525,46 @@ thing a VJ pulls back, and the unscaled timing lanes already keep the screen
 alive at master `0`. Spec updated in
 HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
 
+**`/output` limits flashing for photosensitivity, on by default** (2026-11-05).
+
+The safety stage counts "general flashes" in what is actually shown — an
+opposing change of ≥ 10% in relative luminance where the darker side is below
+0.80, the WCAG 2.3.1 / broadcast definition — and keeps them to `Maxflashes`
+(default 3) per rolling second. It only ever dims: once the next rise would
+break the budget, the frame is held just above the current trough until an old
+transition ages out. A rise is allowed only when its fall also fits, because
+a fall from a peak cannot be prevented by dimming.
+
+```
+/project1/output
+  safety (GLSL: NaN, clamp, gates) ─┬─ flash_limit (Level, × gain) ─ out1
+                                     └─ measure (Analyze average) ─ luma (TOP to CHOP,
+                                        immediate) ─ limiter (Script CHOP) ─ gain
+```
+
+Chosen over leaving it to venues (strobe warnings) because projector visuals
+play to rooms where nobody knows who is watching, and over limiting the
+trigger lanes because a module can flash on its own; `/output` is the one
+place that holds regardless of module quality — the same reasoning as the
+performer controls. `Flashlimit` off is meant as a deliberate per-venue choice
+(a venue that permits strobing and posts warnings), later a show-profile
+setting, not a performance knob. Both parameters carry across rebuilds.
+
+Tested outside TD on synthetic 60 fps signals: 6 Hz and 10 Hz strobes held to
+3 flashes/s; 2 Hz (a flash per beat at 120 BPM), slow fades, sub-10% flicker
+and flicker entirely above 0.80 untouched; `Maxflashes 1` holds to 1; gain
+never exceeds 1. A strobe at exactly 3 Hz sits on the budget and is
+occasionally held.
+
+In TouchDesigner (2026-11-05), with test-mode hits sped to 8 Hz and
+`kinetic_stripes` `Flash 2`: the limiter built and runs without errors, and a
+diagnose snapshot read `transitions 6` (the 3-flash budget, full) with
+`held 1` — it was blocking the next rise. That frame was at a trough
+(`luma = shown = 0.2306`, `gain 1.0`), so nothing needed dimming at that
+instant; real strobes are counted, since 6 transitions were registered.
+Confirmed by eye: the 8 Hz strobe is visibly calmer with `Flashlimit` on than
+off. **Verified.**
+
 ## Open decisions and known gaps
 
 - **Fallback tempo mismatch.** Both runtime docs say `sync_phase` free-runs "at
@@ -542,11 +582,10 @@ HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
 - **`toneAmount` at `0` pins `mood_warmth` to `0`** (fully cool), not to a
   neutral `0.5`, and `mood_softness` (`1 - tone`) ignores it. Spec-literal;
   worth a second look if "less tone influence" should mean "more neutral".
-- **No flash-rate limiter in `/output`.** The safety stage clamps, gates and
-  caps brightness, but nothing limits how fast full-frame brightness can swing
-  (strobe-like flashing from `kinetic_stripes`' flash plus `orb_burst`).
-  Venues and photosensitivity guidance often expect one. Owner's call whether
-  it belongs in `/output` before shows.
+- **The flash limiter measures the whole-frame average only**, so a flash
+  confined to part of the screen (a big orb burst in one corner) is diluted
+  and may pass. A 4×4 grid of measurements would catch it. It reduces risk; it
+  is not a certification — broadcast content still needs a proper flash test.
 - **Where performer controls are surfaced.** Decided that the adapter applies
   them, but not yet how a DJ sets them — a TouchDesigner UI panel, MIDI, or an
   external frontend. V2_ARCHITECTURE block 6 covers this; nothing depends on it

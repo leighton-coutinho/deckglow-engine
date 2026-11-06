@@ -380,11 +380,115 @@ void main()
 '''
 
 
+# Flash limiter (photosensitivity). Counts "general flashes" in what is
+# actually shown - an opposing change in relative luminance of >= 10% where the
+# darker side is below 0.80 (WCAG 2.3.1 / broadcast flash guidance) - and keeps
+# them to Maxflashes per rolling second. It can only dim: once the next rise
+# would break the budget, the frame is held near the current trough until an
+# old transition ages out. A fall from a peak cannot be prevented by dimming,
+# so a rise is only allowed when its fall also fits the budget.
+# Whole-frame average only: a flash confined to part of the screen is diluted.
+LIMITER_LOGIC = r'''
+THRESH = 0.10        # opposing change in relative luminance that counts
+DARK_MAX = 0.80      # ...when the darker side is below this
+WINDOW = 1.0         # seconds
+HOLD_MARGIN = 0.09   # while held, stay under one THRESH step above the trough
+
+
+def _fresh():
+    return {'events': [], 'dir': 0, 'ext': None}
+
+
+def _state():
+    st = parent().storage.get('flash')
+    if st is None:
+        st = _fresh()
+        parent().store('flash', st)
+    return st
+
+
+def Reset():
+    parent().store('flash', _fresh())
+
+
+def Luma(r, g, b):
+    """Approximate relative luminance of the frame average (sRGB-ish, 2.2)."""
+    lin = lambda c: max(0.0, min(1.0, c)) ** 2.2
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def Step(st, luma, now, maxflashes):
+    """One frame. Returns (gain, shown, held). Pure over (st, inputs)."""
+    st['events'] = [t for t in st['events'] if now - t < WINDOW]
+    budget = 2 * max(1, int(maxflashes))       # two transitions per flash
+    ext = st['ext']
+    held = ext is not None and st['dir'] <= 0 and len(st['events']) + 2 > budget
+
+    shown = min(luma, ext + HOLD_MARGIN) if held else luma
+
+    if ext is None:
+        st['ext'] = shown
+    elif st['dir'] >= 0 and ext - shown >= THRESH and shown < DARK_MAX:
+        st['events'].append(now)               # fall from a peak
+        st['dir'], st['ext'] = -1, shown
+    elif st['dir'] <= 0 and shown - ext >= THRESH and ext < DARK_MAX:
+        st['events'].append(now)               # rise from a trough
+        st['dir'], st['ext'] = 1, shown
+    elif st['dir'] > 0:
+        st['ext'] = max(ext, shown)            # follow the peak
+    elif st['dir'] < 0:
+        st['ext'] = min(ext, shown)            # follow the trough
+
+    gain = shown / luma if luma > 1e-5 else 1.0
+    return max(0.0, min(1.0, gain)), shown, held
+
+
+def Cook(scriptOp):
+    root = parent()
+    src = scriptOp.inputs[0] if scriptOp.inputs else None
+
+    def ch(name):
+        c = src[name] if src is not None else None
+        return c.eval() if c is not None else 0.0
+
+    luma = Luma(ch('r'), ch('g'), ch('b'))
+    if root.par.Flashlimit.eval():
+        gain, shown, held = Step(_state(), luma, absTime.seconds,
+                                 root.par.Maxflashes.eval())
+    else:
+        Reset()
+        gain, shown, held = 1.0, luma, False
+
+    scriptOp.clear()
+    scriptOp.isTimeSlice = False
+    scriptOp.numSamples = 1
+    for name, v in (('gain', gain), ('luma', luma), ('shown', shown),
+                    ('held', float(held)),
+                    ('transitions', float(len(_state()['events'])))):
+        scriptOp.appendChan(name).vals = [v]
+'''
+
+LIMITER_CALLBACKS = r'''
+def onSetupParameters(scriptOp):
+    return
+
+def onPulse(par):
+    return
+
+def onGetCookLevel(scriptOp):
+    return CookLevel.WHEN_USED   # state advances every frame
+
+def onCook(scriptOp):
+    op('limiter_logic').module.Cook(scriptOp)
+    return
+'''
+
+
 def build_output(src_host):
     keep = {}
     old = ROOT.op('output')
     if old is not None:
-        for nm in ('Maxbrightness', 'Blackout'):
+        for nm in ('Maxbrightness', 'Blackout', 'Flashlimit', 'Maxflashes'):
             p = getattr(old.par, nm, None)
             if p is not None:
                 keep[nm] = p.eval()
@@ -408,6 +512,16 @@ def build_output(src_host):
     p = page.appendToggle('Blackout')[0]
     p.default = 0
     p.val = keep.get('Blackout', 0)
+    # On by default. Turning it off is a deliberate per-venue decision (e.g. a
+    # venue that permits strobing and posts warnings), not a performance knob.
+    p = page.appendToggle('Flashlimit', label='Flash Limit (photosensitivity)')[0]
+    p.default = 1
+    p.val = keep.get('Flashlimit', 1)
+    p = page.appendInt('Maxflashes', label='Max Flashes / s')[0]
+    p.default = 3
+    p.min, p.max = 1, 10
+    p.clampMin = p.clampMax = True
+    p.val = keep.get('Maxflashes', 3)
 
     img = out.create(inTOP, 'in0_image')
     img.nodeX, img.nodeY = 0, 0
@@ -430,9 +544,38 @@ def build_output(src_host):
     fx.par.vec0valuey.expr = 'parent().par.Maxbrightness'
     fx.par.vec0valuez.expr = 'parent().par.Blackout'
 
+    # flash limiter: measure what safety produces, dim it if flashing too fast
+    measure = out.create(analyzeTOP, 'measure')
+    measure.nodeX, measure.nodeY = 600, -300
+    measure.inputConnectors[0].connect(fx)
+    measure.par.op = 'average'
+
+    luma = out.create(toptoCHOP, 'luma')
+    luma.nodeX, luma.nodeY = 900, -300
+    luma.par.top = 'measure'
+    luma.par.downloadtype = 'immediate'    # same-frame value, so the gain is not a frame late
+
+    logic = out.create(textDAT, 'limiter_logic')
+    logic.nodeX, logic.nodeY = 900, -700
+    logic.text = LIMITER_LOGIC
+
+    cbs = out.create(textDAT, 'limiter_callbacks')
+    cbs.nodeX, cbs.nodeY = 1200, -700
+    cbs.text = LIMITER_CALLBACKS
+
+    limiter = out.create(scriptCHOP, 'limiter')
+    limiter.nodeX, limiter.nodeY = 1200, -300
+    limiter.inputConnectors[0].connect(luma)
+    limiter.par.callbacks = 'limiter_callbacks'
+
+    flash_limit = out.create(levelTOP, 'flash_limit')
+    flash_limit.nodeX, flash_limit.nodeY = 900, 0
+    flash_limit.inputConnectors[0].connect(fx)
+    flash_limit.par.brightness1.expr = "op('limiter')['gain']"
+
     o1 = out.create(outTOP, 'out1')
-    o1.nodeX, o1.nodeY = 600, 0
-    o1.inputConnectors[0].connect(fx)
+    o1.nodeX, o1.nodeY = 1500, 0
+    o1.inputConnectors[0].connect(flash_limit)
 
     out.inputConnectors[0].connect(src_host.outputConnectors[0])
     motion = ROOT.op('MOTION_OUT')
@@ -448,6 +591,7 @@ def build_output(src_host):
     print('  image from    :', [c.owner.name for c in out.inputConnectors[0].connections])
     print('  motion wired  :', bool(out.inputConnectors[1].connections))
     print('  Maxbrightness :', out.par.Maxbrightness.eval(), ' Blackout:', out.par.Blackout.eval())
+    print('  Flashlimit    :', out.par.Flashlimit.eval(), ' Maxflashes:', out.par.Maxflashes.eval())
     return out
 
 
