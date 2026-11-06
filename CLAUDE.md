@@ -249,9 +249,20 @@ that turns NaN/Inf to black, hard-clamps to `0..1`, multiplies by the
 `blackout_gate` lane (1 when absent), a `Maxbrightness` ceiling and a manual
 `Blackout` toggle, and forces alpha to 1 — then the flash limiter (see
 *Decisions made*). All four custom parameters carry across rebuilds. It sits after `finish_host`, so a bypassed finish module can never
-skip it (spec §10.4). **Display routing — a Window COMP to the projector — is
-not built yet**; `OUTPUT` is where it will read from. Like every chain end,
-`OUTPUT` only cooks when something views it.
+skip it (spec §10.4). Like every chain end, `OUTPUT` only cooks when
+something views it.
+
+**Display routing — done and verified** (2026-11-05): the owner ran the
+build, open and Escape-to-close steps and reported everything working. The
+saved `.toe` has `projector` showing `/project1/OUTPUT` on display 1. `tools/build_projector_window.py`
+builds `/project1/projector`, a Window COMP showing `OUTPUT` (by name, so stack
+rebuilds don't break it): borderless, filling the chosen display, always on
+top, cursor only while moving, Escape closes. It picks the first non-primary
+display; with a single display it uses the primary, so opening it covers the
+editor. It is **never opened by the build** — `par.winopen.pulse()` opens a
+separate window (testing), `par.performance.pulse()` opens Perform Mode, which
+TouchDesigner's docs recommend for final output. Re-running keeps the chosen
+display.
 
 **Blocks 7–8 remain.** See *Remaining work*.
 
@@ -278,6 +289,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | Script | Purpose |
 | --- | --- |
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
+| `build_projector_window.py` | Builds `/project1/projector`, the Window COMP that shows `OUTPUT` full-screen on a display. Never opens it; prints the open/close commands and the detected displays. |
 | `build_projector_safe.py` | Builds and exports `modules/projector_safe/module.tox` and `thumbnail.png` (rendered over kinetic_stripes' thumbnail, so Block 3 must be exported). |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
 | `diagnose_module_host.py` | Read-only state dump of every host and its loaded module, including orb pool, shader and lockup layout state. **Use this before guessing.** |
@@ -422,9 +434,10 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 4. ~~`orb_burst`~~ — done (see *Current state*).
 5. ~~`clean_lockup`~~ — done (see *Current state*).
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
-   Built, awaiting live verification (see *Current state*). Display routing
-   (Window COMP) still to do.
+   ~~Done~~ — verified, including the flash limiter and the `projector`
+   Window COMP.
 7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
+   **This is the next block.**
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
