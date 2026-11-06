@@ -227,7 +227,10 @@ blackout_gate
 - repeating `0..1` ramp that wraps once per beat
 - derived from the engine's beat phase, not from `sync`
 - free-runs at the last usable tempo when tempo confidence is low, so it never
-  stalls mid-sweep
+  stalls mid-sweep: it carries on from its current position (no jump), at the
+  last BPM the engine was confident about, or 120 BPM if none has been seen,
+  and re-locks to the engine's beat phase when confidence returns (below 0.20
+  free-runs, 0.25 or above re-locks, so it does not flap)
 - use for sweeps, scanner positions, repeated oscillators
 
 `sync_sine`

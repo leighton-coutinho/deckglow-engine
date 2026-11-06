@@ -280,6 +280,8 @@ needs beat position must read `sync_phase` and must not reconstruct phase from
 The motion adapter guarantees that `sync_phase` always advances. When the
 engine's tempo estimate is unreliable, the adapter substitutes a free-running
 ramp at the last usable tempo, so a module never observes a stalled phase.
+The free-running ramp continues from the current phase without a jump; before
+any tempo has been detected it runs at 120 BPM.
 Tempo confidence is not a lane; modules must not implement their own tempo
 fallback.
 

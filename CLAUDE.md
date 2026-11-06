@@ -383,6 +383,8 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | Script | Purpose |
 | --- | --- |
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
+| `build_tempo_fallback.py` | Adds `tempo_bpm` to `engine_in` and replaces the fixed 120 BPM fallback with `phase_keeper` (last usable tempo, no phase jump). Idempotent; keeps `test_bpm`. |
+| `diagnose_tempo_fallback.py` | Read-only. Prints the keeper's mode and held tempo, then measures `sync_phase` speed over 1 s and reports PASS if it matches. |
 | `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |
 | `build_scene_library.py` | Builds `/project1/scene_library`: discovery, quarantine (§15.2–15.4), JSON reports in `validation/`, per-version approvals in `library/approved.json`, and the gated `LoadApproved`. |
 | `build_projector_window.py` | Builds `/project1/projector`, the Window COMP that shows `OUTPUT` full-screen on a display. Never opens it; prints the open/close commands and the detected displays. |
@@ -534,9 +536,9 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
    Window COMP.
 7. ~~Quarantine validation and manifest discovery~~ — done (see *Current state*).
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
-   **This is the next block.** Settle the open decisions that touch the
-   contract first (fallback tempo, `Paletteindex` overlap, `toneAmount`
-   semantics, the 1080p licence question).
+   **In progress.** Settle the open decisions that touch the contract first:
+   ~~fallback tempo~~ (done, verified),
+   `Paletteindex` overlap, `toneAmount` semantics, the 1080p licence question.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
@@ -676,12 +678,29 @@ instant; real strobes are counted, since 6 transitions were registered.
 Confirmed by eye: the 8 Hz strobe is visibly calmer with `Flashlimit` on than
 off. **Verified.**
 
+**The tempo fallback keeps the last usable tempo** (2026-11-05, Block 8
+decision 1 of 4). Block 1 had a fixed 2 Hz LFO: always 120 BPM, and a phase
+jump on every switch, so beat-locked motion jumped and ran at the wrong speed
+through every breakdown not at 120. Chosen over correcting the docs because it
+is what the contract already promised and breakdowns keep the track's tempo.
+`tools/build_tempo_fallback.py` adds `tempo_bpm` to `engine_in` (live from
+`/rve/v2/tempo/bpm`, a `test_bpm` constant of 120 in test mode) and replaces
+the old chain in `motion_adapter` (`sel_beat_phase` … `add_phase`, ten nodes)
+with `phase_keeper`, a Script CHOP feeding `lane_sync_phase`, `ex_sine` and
+`ex_tri`. Confident (≥ 0.20, ≥ 0.25 to re-lock): phase = engine beat phase and
+the BPM is remembered. Not: phase carries on from where it was at that BPM
+(120 if none yet; BPM outside 40–240 ignored; a stalled frame advances at most
+0.1 s). Tested outside TD: no jump entering, during or leaving a 128 BPM
+breakdown, 174 held, 120 default, no flapping on wobbling confidence.
+**Verified in TouchDesigner** (test mode): confident at 120 → `live`, measured
+120.00 BPM, PASS; tempo set to 128 then confidence dropped to 0 →
+`free-run`, held 128, measured 128.00 BPM, largest frame jump 0.0000, PASS.
+The re-lock step was not separately diagnosed in TD (covered by the offline
+test). `sync_bar_env` still follows the engine's
+bar phase directly and has no fallback; the spec promises none.
+
 ## Open decisions and known gaps
 
-- **Fallback tempo mismatch.** Both runtime docs say `sync_phase` free-runs "at
-  the last usable tempo". The implementation is a fixed 2 Hz LFO, so it always
-  falls back to 120 BPM. Either correct the docs or wire `/rve/v2/tempo/bpm`
-  into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
 - **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
   texture branch was locked and its palette is fixed. So `textureAmount` and
   `toneAmount` have no effect on this scene, and `Paletteindex` is present but
