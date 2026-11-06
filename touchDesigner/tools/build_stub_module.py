@@ -54,16 +54,9 @@ p = std.appendInt('Outputheight')[0]
 p.default = 1080
 p.val = 1080
 
-# --------------------------------------------------- base_scene parameters
-scene = stub.appendCustomPage('Scene')
-
 # No Motionamount/Textureamount/Toneamount: performer controls are applied
-# once by /motion_adapter and arrive already scaled (spec s9.1).
-p = scene.appendInt('Paletteindex')[0]
-p.default = 0
-p.min = 0
-p.clampMin = True
-p.val = 0
+# once by /motion_adapter and arrive already scaled (spec s9.1). No
+# Paletteindex either: the runtime chooses the palette (s8.1). 0.2.0.
 
 
 def lane(name):

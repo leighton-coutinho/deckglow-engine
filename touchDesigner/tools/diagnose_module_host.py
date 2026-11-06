@@ -34,6 +34,7 @@ def dump(name):
 
     print('CHAIN')
     show('image input from', lambda: [c.owner.name for c in h.inputConnectors[0].connections] or '(none)')
+    show('palette input from', lambda: [c.owner.name for c in h.inputConnectors[2].connections] or '(none)')
     show('in0_image res', lambda: '%dx%d' % (h.op('in0_image').width, h.op('in0_image').height))
     show('module_null inputs', lambda: len(h.op('module_null').inputConnectors[0].connections))
     show('out_switch index', lambda: h.op('out_switch').par.index.eval())

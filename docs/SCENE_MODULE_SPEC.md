@@ -313,6 +313,11 @@ Rules:
 - runtimes may add roles; modules must ignore roles they do not use
 - a module must still render if its palette input is absent, using internal
   defaults
+- the runtime chooses the palette: one show-level selection (`paletteIndex`)
+  feeds the same table to every module that takes a palette input, so all
+  layers share one colour scheme. A module reads the table it is given and
+  must not choose between palettes itself. A module may interpret the roles in
+  its own way, or ignore the palette entirely and keep a fixed look.
 
 ### 8.2 Brand DAT
 
@@ -406,11 +411,10 @@ Connector order:
 | `0` | `in0_motion` | CHOP | Yes |
 | `1` | `in1_palette` | DAT | No |
 
-Additional required parameters on a custom page named `Scene`:
-
-| Parameter | Type | Range/default |
-| --- | --- | --- |
-| `Paletteindex` | Integer | minimum `0`, default `0` |
+Base scenes have no slot-specific required parameters. Palette choice belongs
+to the runtime and arrives as the `in1_palette` table (section 8.1); an
+earlier draft's per-module `Paletteindex` was removed because it competed with
+the runtime's selection.
 
 Motion, texture and tone scaling arrive already applied in the lanes; see
 section 9.1.

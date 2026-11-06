@@ -391,6 +391,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_projector_safe.py` | Builds and exports `modules/projector_safe/module.tox` and `thumbnail.png` (rendered over kinetic_stripes' thumbnail, so Block 3 must be exported). |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
 | `diagnose_module_host.py` | Read-only state dump of every host and its loaded module, including orb pool, shader and lockup layout state. **Use this before guessing.** |
+| `build_palette_source.py` | Stand-in runtime palette: `palette_source` (`Paletteindex`, editable `library`) → `/project1/PALETTE`. Keeps rows and index. Run before `build_module_host.py`. |
 | `build_brand_source.py` | Stand-in branding runtime: `/project1/BRAND` (brand DAT) and `/project1/LOGO` (placeholder logo TOP). Keeps edited table rows across rebuilds. Run before `build_module_host.py`. |
 | `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `LOGO`; uses its own demo brand table for the thumbnail. |
 | `build_orb_burst.py` | Builds and exports `modules/orb_burst/module.tox` and `thumbnail.png`. Checks the shader compiled and the pool produced orbs before saving. |
@@ -537,8 +538,9 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 7. ~~Quarantine validation and manifest discovery~~ — done (see *Current state*).
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
    **In progress.** Settle the open decisions that touch the contract first:
-   ~~fallback tempo~~ (done, verified),
-   `Paletteindex` overlap, `toneAmount` semantics, the 1080p licence question.
+   ~~fallback tempo~~ (done, verified), ~~`Paletteindex` overlap~~ (done: the
+   runtime owns it, verified), `toneAmount` semantics, the 1080p licence
+   question.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
@@ -699,12 +701,42 @@ The re-lock step was not separately diagnosed in TD (covered by the offline
 test). `sync_bar_env` still follows the engine's
 bar phase directly and has no fallback; the spec promises none.
 
+**The runtime owns the palette** (2026-11-05, Block 8 decision 2 of 4). The
+contract required a per-module `Paletteindex` on every base scene while the
+architecture also had a show-level `paletteIndex`, `setPalette(paletteId)` and
+a `palettes/` folder in packs — two owners, no rule for which wins. Chosen:
+one show-level selection feeds the same palette table to every module that
+takes one, so layers share a colour scheme; modules read the table and never
+choose between palettes. `Paletteindex` is removed from §10.1 (base scenes
+now have no slot-specific parameters), §8.1 states the rule, and quarantine
+warns "obsolete Paletteindex" if a module still has one. kinetic_stripes →
+1.1.0 and stub → 0.2.0 drop it; kinetic needs re-validating and re-approving.
+
+`tools/build_palette_source.py` builds the stand-in runtime palette:
+`palette_source` (custom par `Paletteindex`, wraps around the library) holding
+an editable `library` table (deckglow, ember, ice, mono; "r,g,b" per role) and
+writing the §8.1 table, out to `/project1/PALETTE`, which
+`build_module_host.py` wires into `module_host` and `hit_host` input 2. A
+Parameter Execute and a DAT Execute rewrite the table on index change or
+library edits. kinetic_stripes ignores the palette (fixed proto look), so
+changing it recolours `orb_burst` only — making the stripes follow it is a
+separate look decision.
+
+**Verified in TouchDesigner:** kinetic_stripes 1.1.0 re-exported and passes
+quarantine with no "obsolete Paletteindex" warning (so the new `.tox` really
+lacks it) and is re-approved at 1.1.0; stub 0.2.0 warns only for black at
+idle; the other three still pass. The saved `.toe` wires `PALETTE` into
+`module_host` and `hit_host` input 2, and switching `Paletteindex` recoloured
+the orbs (owner reported all steps fine). The first kinetic re-export failed
+with "Error creating file" on `thumbnail.png`, most likely because another app
+had it open; the builder now reports that case instead of a traceback.
+
 ## Open decisions and known gaps
 
 - **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
   texture branch was locked and its palette is fixed. So `textureAmount` and
-  `toneAmount` have no effect on this scene, and `Paletteindex` is present but
-  unused. Faithful to what the proto rendered; revisit if the reference scene
+  `toneAmount` have no effect on this scene, and it ignores the runtime
+  palette. Faithful to what the proto rendered; revisit if the reference scene
   should demonstrate every lane family.
 - **`texture_jitter` drifts rather than shimmers.** The spec calls it a
   "higher-frequency" lane, but `noise_tex` has `period 4`, so it wanders slowly.
@@ -720,10 +752,6 @@ bar phase directly and has no fallback; the spec promises none.
   them, but not yet how a DJ sets them — a TouchDesigner UI panel, MIDI, or an
   external frontend. V2_ARCHITECTURE block 6 covers this; nothing depends on it
   until then.
-- **`Paletteindex` is still per-module** while `paletteIndex` also exists as a
-  global control. It survived the §9.1 cleanup because it selects rather than
-  scales, so it does not have the double-multiply problem — but the overlap
-  should be resolved before Block 8 freezes the contract.
 - **Output is capped at 1280×720 by the TouchDesigner licence, not by a bug.**
   Non-Commercial TouchDesigner limits resolution to 1280×1280, so a 1920×1080
   request clamps to 1280 wide preserving aspect — exactly 1280×720. Confirmed

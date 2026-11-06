@@ -8,6 +8,7 @@ Run inside TouchDesigner's textport (Alt+T), after build_brand_source.py:
     module_host -> hit_host -> brand_host -> finish_host -> output -> OUTPUT
     (base_scene)   (hit_fx)   (brand_overlay) (finish_fx)  (safety)  (Null TOP)
     BRAND -> brand_host in3_brand     LOGO -> brand_host in4_logo
+    PALETTE -> module_host and hit_host in2_palette (the runtime's palette)
 
 module_host is the Block 2 wrapper; hit_host (Block 4), brand_host (Block 5)
 and finish_host (Block 6) are the same wrapper in later slots, each taking the
@@ -335,8 +336,16 @@ def build_host(name, x, y, default_type, image_src=None, extra=None):
     return host
 
 
-base_host = build_host('module_host', 6400, 0, 'base_scene')
-hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host)
+# The runtime's palette (spec s8.1): the same PALETTE table reaches every slot
+# that takes one - host input 2 (in2_palette) on base and hit hosts.
+# PALETTE comes from build_palette_source.py.
+palette = ROOT.op('PALETTE')
+pal_extra = {2: palette} if palette is not None else {}
+if palette is None:
+    print('WARNING no /project1/PALETTE - run build_palette_source.py, then rebuild')
+
+base_host = build_host('module_host', 6400, 0, 'base_scene', extra=pal_extra)
+hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host, extra=pal_extra)
 
 # brand_overlay takes prepared brand data (spec s8.2, s10.3). Host inputs 3
 # and 4 are in3_brand and in4_logo; they reach the module as its connectors 2

@@ -94,7 +94,7 @@ STANDARD = [('Moduleactive', 'Toggle'), ('Intensity', 'Float'), ('Seed', 'Int'),
 CONTRACT = {
     'base_scene': {
         'inputs': [('in0_motion', 'CHOP', True), ('in1_palette', 'DAT', False)],
-        'page': 'Scene', 'pars': [('Paletteindex', 'Int', None)]},
+        'page': None, 'pars': []},     # palette choice is the runtime's (s8.1)
     'hit_fx': {
         'inputs': [('in0_image', 'TOP', True), ('in1_motion', 'CHOP', True),
                    ('in2_palette', 'DAT', False)],
@@ -420,6 +420,9 @@ def _interface(m, mtype, manifest, rec):
         par_check('DeckGlow', name, style)
     for name, style, tokens in c['pars']:
         par_check(c['page'], name, style, tokens)
+    if getattr(m.par, 'Paletteindex', None) is not None:
+        rec('interface', 'obsolete Paletteindex', False,
+            'removed from the contract: the runtime chooses the palette (s8.1)', warn=True)
 
     # s15.1 last item: every declared control has a matching custom parameter
     declared = set()

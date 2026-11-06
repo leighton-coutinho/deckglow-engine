@@ -3,7 +3,7 @@
   "id": "com.deckglow.clean_lockup",
   "version": "1.0.1",
   "type": "brand_overlay",
-  "started": "2026-11-05T22:31:00",
+  "started": "2026-11-05T22:51:44",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\clean_lockup",
@@ -261,7 +261,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.56 ms, peak 0.82 ms (warn above 4)"
+      "detail": "avg 0.66 ms, peak 0.95 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -297,12 +297,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.56,
-    "cook_ms_peak": 0.816,
-    "gpu_ms_avg": 0.097,
+    "cook_ms_avg": 0.661,
+    "cook_ms_peak": 0.954,
+    "gpu_ms_avg": 0.123,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "pass",
-  "finished": "2026-11-05T22:31:04"
+  "finished": "2026-11-05T22:51:49"
 }

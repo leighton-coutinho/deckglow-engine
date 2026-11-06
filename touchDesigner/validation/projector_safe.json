@@ -3,7 +3,7 @@
   "id": "com.deckglow.projector_safe",
   "version": "1.0.0",
   "type": "finish_fx",
-  "started": "2026-11-05T22:28:07",
+  "started": "2026-11-05T22:51:57",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\projector_safe",
@@ -236,7 +236,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.24 ms, peak 0.35 ms (warn above 4)"
+      "detail": "avg 0.25 ms, peak 0.36 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -272,12 +272,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.241,
-    "cook_ms_peak": 0.349,
-    "gpu_ms_avg": 0.024,
+    "cook_ms_avg": 0.247,
+    "cook_ms_peak": 0.359,
+    "gpu_ms_avg": 0.025,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "pass",
-  "finished": "2026-11-05T22:28:11"
+  "finished": "2026-11-05T22:52:01"
 }

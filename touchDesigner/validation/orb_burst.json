@@ -3,7 +3,7 @@
   "id": "com.deckglow.orb_burst",
   "version": "1.0.0",
   "type": "hit_fx",
-  "started": "2026-11-05T22:28:02",
+  "started": "2026-11-05T22:51:53",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\orb_burst",
@@ -256,7 +256,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.35 ms, peak 0.55 ms (warn above 4)"
+      "detail": "avg 0.35 ms, peak 0.48 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -292,12 +292,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.352,
-    "cook_ms_peak": 0.548,
-    "gpu_ms_avg": 0.081,
+    "cook_ms_avg": 0.355,
+    "cook_ms_peak": 0.476,
+    "gpu_ms_avg": 0.108,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "pass",
-  "finished": "2026-11-05T22:28:07"
+  "finished": "2026-11-05T22:51:57"
 }

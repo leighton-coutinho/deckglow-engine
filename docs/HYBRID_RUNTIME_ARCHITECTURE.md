@@ -372,9 +372,10 @@ Required output:
 Required custom parameters:
 
 - `Intensity`
-- `Paletteindex`
 
 Motion, texture and tone scaling is applied by `/motion_adapter`, not here.
+Palette choice is the runtime's (`paletteIndex`): the chosen palette arrives on
+the palette DAT input, the same table for every slot that takes one.
 
 Restrictions:
 

@@ -85,17 +85,10 @@ p = std.appendInt('Outputheight')[0]
 p.default = 1080
 p.val = 360
 
-# --------------------------------------------------- base_scene parameters
-scene = m.appendCustomPage('Scene')
-
-# Performer amounts arrive pre-scaled in the lanes (spec s9.1).
-# Paletteindex is required by s10.1; the proto look is fixed greys-to-yellow,
-# so this module does not read a palette yet.
-p = scene.appendInt('Paletteindex')[0]
-p.default = 0
-p.min = 0
-p.clampMin = True
-p.val = 0
+# Performer amounts arrive pre-scaled in the lanes (spec s9.1). Base scenes
+# have no slot-specific parameters: the runtime chooses the palette (s8.1).
+# This scene keeps the proto's fixed greys-to-yellow look and ignores it.
+# 1.1.0 removed the per-module Paletteindex.
 
 # -------------------------------------------- creative controls (spec s11)
 # Defaults are the proto's literal constants. Keep in sync with module.json.
@@ -272,13 +265,22 @@ b = op(%(build)r)
 tex = b.op('render/lookup_tex')
 out = b.op('out1')
 good, info = tex_ok(tex)
+saved = False
 print('  after lock        %%s, lock=%%s' %% (info, tex.lock))
 if not (good and tex.lock):
     print('FAIL lookup image lost after locking; leaving %%s for inspection' %% b.path)
 else:
     out.cook(force=True)
     print('  thumbnail render  %%dx%%d' %% (out.width, out.height))
-    out.save(%(thumb)r)
+    try:
+        out.save(%(thumb)r)
+        saved = True
+    except Exception as e:
+        # seen once as "Error creating file": the PNG was held open elsewhere
+        print('FAIL could not write %%s (%%s) - close any app showing it and re-run;'
+              ' leaving %%s' %% (%(thumb)r, e, b.path))
+        saved = False
+if good and tex.lock and saved:
     b.par.Outputwidth = 1920
     b.par.Outputheight = 1080
     b.save(%(tox)r)

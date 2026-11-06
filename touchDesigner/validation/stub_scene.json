@@ -1,15 +1,15 @@
 {
   "folder": "stub_scene",
   "id": "com.deckglow.stub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "base_scene",
-  "started": "2026-11-05T22:28:11",
+  "started": "2026-11-05T22:52:01",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\stub_scene",
     "id": "com.deckglow.stub",
     "type": "base_scene",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "displayName": "Stub Scene",
     "status": "pass",
     "checks": [
@@ -51,7 +51,7 @@
       {
         "check": "version",
         "status": "pass",
-        "detail": "'0.1.0' (semantic version)"
+        "detail": "'0.2.0' (semantic version)"
       },
       {
         "check": "runtimeApi",
@@ -165,11 +165,6 @@
       "check": "par Outputheight",
       "status": "pass",
       "detail": ""
-    },
-    {
-      "check": "par Paletteindex",
-      "status": "pass",
-      "detail": ""
     }
   ],
   "runtime": [
@@ -216,7 +211,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.19 ms, peak 0.28 ms (warn above 4)"
+      "detail": "avg 0.20 ms, peak 0.43 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -247,12 +242,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.19,
-    "cook_ms_peak": 0.282,
-    "gpu_ms_avg": 0.013,
+    "cook_ms_avg": 0.203,
+    "cook_ms_peak": 0.433,
+    "gpu_ms_avg": 0.02,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "warn",
-  "finished": "2026-11-05T22:28:15"
+  "finished": "2026-11-05T22:52:05"
 }
