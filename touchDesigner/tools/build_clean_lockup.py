@@ -1,7 +1,8 @@
 """Builds and exports the clean_lockup brand_overlay module (Block 5).
 
 Run inside TouchDesigner's textport (Alt+T), with engine_input_block1.toe open
-and build_brand_source.py already run (the thumbnail uses BRAND and LOGO):
+and build_brand_source.py already run (the thumbnail uses LOGO, plus a fixed
+demo brand table of its own so it never depends on brand_table edits):
 
     exec(open(r'C:\\Users\\ljlco\\source\\repos\\CodexProjects\\ReactiveVisualEngineCode\\touchDesigner\\tools\\build_clean_lockup.py').read())
 
@@ -43,12 +44,25 @@ THUMB = os.path.join(MODULE_DIR, 'thumbnail.png')
 ROOT = op('/project1')
 BUILD = '_clean_lockup_build'
 BG = '_clean_lockup_thumb_bg'
+DEMO = '_clean_lockup_thumb_brand'
 
-if ROOT.op('BRAND') is None or ROOT.op('LOGO') is None:
+# The thumbnail uses its own fixed demo brand, not /project1/BRAND, so it is
+# the same whatever the owner has typed into brand_table (mode, name, ...).
+DEMO_ROWS = [
+    ['key',            'value'],
+    ['displayName',    'DJ NAME'],
+    ['mode',           'logo_and_name'],
+    ['primaryColor',   '1.0,0.82,0.1,1.0'],
+    ['secondaryColor', '0.1,0.35,1.0,1.0'],
+    ['scale',          '1.0'],
+    ['opacity',        '1.0'],
+]
+
+if ROOT.op('LOGO') is None:
     raise RuntimeError('run build_brand_source.py first: the thumbnail needs '
-                       '/project1/BRAND and /project1/LOGO')
+                       '/project1/LOGO')
 
-for nm in (BUILD, BG):
+for nm in (BUILD, BG, DEMO):
     old = ROOT.op(nm)
     if old:
         old.destroy()
@@ -506,8 +520,13 @@ bg.par.resolutionw = 640
 bg.par.resolutionh = 360
 bg.par.colorr, bg.par.colorg, bg.par.colorb = 0.06, 0.06, 0.09
 bg.par.alpha = 1
+demo = ROOT.create(tableDAT, DEMO)
+demo.nodeX, demo.nodeY = 9200, -2200
+demo.clear()
+for r in DEMO_ROWS:
+    demo.appendRow(r)
 m.inputConnectors[0].connect(bg)
-m.inputConnectors[2].connect(ROOT.op('BRAND'))
+m.inputConnectors[2].connect(demo)
 m.inputConnectors[3].connect(ROOT.op('LOGO'))
 
 print('clean_lockup network built in', m.path, '- finishing in a few frames...')
@@ -542,6 +561,7 @@ else:
     if ok:
         b.destroy()
         op(%(bg)r).destroy()
+        op(%(demo)r).destroy()
         print('clean_lockup exported; build COMPs removed')
         print('next: load it in brand_host (see CLAUDE.md, Block 5)')
     else:
@@ -551,5 +571,5 @@ else:
 if not os.path.isdir(MODULE_DIR):
     os.makedirs(MODULE_DIR)
 
-run(STAGE % {'build': m.path, 'bg': bg.path, 'tox': TOX, 'thumb': THUMB},
+run(STAGE % {'build': m.path, 'bg': bg.path, 'demo': demo.path, 'tox': TOX, 'thumb': THUMB},
     delayFrames=70)   # > 60 so LogoPresent() has sampled the wired logo

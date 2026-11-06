@@ -201,11 +201,59 @@ diagnose run showed `mode name` with the logo rect empty and the name centred.
 The saved `.toe`'s `brand_table` holds the owner's test edits
 (`displayName KOUTINHO`, `mode name`), which the brand source builder keeps.
 
-Look notes, not faults: the subtitle at `0.45 ×` name height in secondary blue
-reads small and low-contrast on dark scenes, and the placeholder logo's square
-texture leaves space above and below "DG".
+**The owner's lockup is just the name — no subtitle** (2026-11-05). The
+stand-in brand table no longer has a `subtitle` row, and the clean_lockup
+thumbnail is rendered from a fixed demo brand of its own (DJ NAME,
+logo_and_name, no subtitle) so it never depends on `brand_table` edits.
+`subtitle` stays an optional key in spec §8.2 and the module still draws one
+if a row is present.
 
-**Blocks 6–8 remain.** See *Remaining work*.
+Look note, not a fault: the placeholder logo's square texture leaves space
+above and below "DG".
+
+**Block 6 — `projector_safe` and `/output`: done and verified** (2026-11-05),
+except display routing (below).
+
+Verified in TouchDesigner: the export passed its shader and background
+checks; all four hosts load with `Status` `ok: 1280x720` and no errors, chained
+`module_host` → `hit_host` → `brand_host` → `finish_host` → `output`, with
+motion wired and `blackout_gate` reading 1. With defaults the finish reads
+`uFinish (1, 1, 0, 1)` and `uMood (0, 0.006, 1)` — tint 0 because test-mode
+tone is 0.5, punch `0.08 × impact_wide`. By eye on `OUTPUT`: the full picture
+shows, Softness and Contrast change it, `Maxbrightness 0.5` halves it and
+`Blackout` turns it black.
+
+The stack is now complete: four slots plus the runtime's own safety stage.
+
+```
+module_host → hit_host → brand_host → finish_host → output → OUTPUT
+(base)        (hit_fx)   (brand)      (finish_fx)   safety   Null TOP, the one
+                                                             terminal a display reads
+```
+
+`projector_safe` (`tools/build_projector_safe.py`, finish_fx):
+
+- `Softness` blends toward a Blur TOP (≈0.8% of frame height), modulated by
+  `mood_softness`: `Softness × (0.6 + 0.8 × mood_softness)`.
+- `Contrast` around 0.5, then `Brightness`, then a restrained lift
+  `× (1 + Punch × impact_wide)`.
+- Warmth tint `r × (1+t)`, `b × (1−t)`, `t = (mood_warmth − 0.5) × 0.2 × Warmth`.
+- `Outputclamp` clamps to `0..1`; `Intensity` blends finished with untouched.
+- With the spec defaults (1, 1, 0) it only moves by the small warmth and punch
+  terms. No Python. The thumbnail is rendered over kinetic_stripes' thumbnail
+  with Softness 0.35 / Contrast 1.25 to show the effect; the export keeps the
+  spec defaults.
+
+`/project1/output` (built by `build_module_host.py`, not a module): a GLSL TOP
+that turns NaN/Inf to black, hard-clamps to `0..1`, multiplies by the
+`blackout_gate` lane (1 when absent), a `Maxbrightness` ceiling and a manual
+`Blackout` toggle, and forces alpha to 1. Both custom parameters carry across
+rebuilds. It sits after `finish_host`, so a bypassed finish module can never
+skip it (spec §10.4). **Display routing — a Window COMP to the projector — is
+not built yet**; `OUTPUT` is where it will read from. Like every chain end,
+`OUTPUT` only cooks when something views it.
+
+**Blocks 7–8 remain.** See *Remaining work*.
 
 ### Which file is current
 
@@ -229,11 +277,12 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 
 | Script | Purpose |
 | --- | --- |
-| `build_module_host.py` | Builds the slot stack: `module_host` (base_scene) → `hit_host` (hit_fx) → `brand_host` (brand_overlay, plus `BRAND`/`LOGO`). Idempotent; carries `Modulepath`/`Moduletype`. Pulse `Load` on each host after rebuilding. |
+| `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
+| `build_projector_safe.py` | Builds and exports `modules/projector_safe/module.tox` and `thumbnail.png` (rendered over kinetic_stripes' thumbnail, so Block 3 must be exported). |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
 | `diagnose_module_host.py` | Read-only state dump of every host and its loaded module, including orb pool, shader and lockup layout state. **Use this before guessing.** |
 | `build_brand_source.py` | Stand-in branding runtime: `/project1/BRAND` (brand DAT) and `/project1/LOGO` (placeholder logo TOP). Keeps edited table rows across rebuilds. Run before `build_module_host.py`. |
-| `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `BRAND`/`LOGO`; waits 70 frames so the logo check has sampled. |
+| `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `LOGO`; uses its own demo brand table for the thumbnail; waits 70 frames so the logo check has sampled. |
 | `build_orb_burst.py` | Builds and exports `modules/orb_burst/module.tox` and `thumbnail.png`. Checks the shader compiled and the pool produced orbs before saving. |
 | `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
 | `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
@@ -373,8 +422,8 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 4. ~~`orb_burst`~~ — done (see *Current state*).
 5. ~~`clean_lockup`~~ — done (see *Current state*).
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
-   **This is the next block.** Needs a fourth host slot fed from `brand_host`
-   and the first `/output` layer.
+   Built, awaiting live verification (see *Current state*). Display routing
+   (Window COMP) still to do.
 7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
 
@@ -493,6 +542,11 @@ HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
 - **`toneAmount` at `0` pins `mood_warmth` to `0`** (fully cool), not to a
   neutral `0.5`, and `mood_softness` (`1 - tone`) ignores it. Spec-literal;
   worth a second look if "less tone influence" should mean "more neutral".
+- **No flash-rate limiter in `/output`.** The safety stage clamps, gates and
+  caps brightness, but nothing limits how fast full-frame brightness can swing
+  (strobe-like flashing from `kinetic_stripes`' flash plus `orb_burst`).
+  Venues and photosensitivity guidance often expect one. Owner's call whether
+  it belongs in `/output` before shows.
 - **Where performer controls are surfaced.** Decided that the adapter applies
   them, but not yet how a DJ sets them — a TouchDesigner UI panel, MIDI, or an
   external frontend. V2_ARCHITECTURE block 6 covers this; nothing depends on it

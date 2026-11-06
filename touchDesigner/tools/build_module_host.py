@@ -1,17 +1,19 @@
-"""Builds the scene-module wrappers: a three-slot stack, base -> hit -> brand.
+"""Builds the four-slot stack and the /output safety stage.
 
 Run inside TouchDesigner's textport (Alt+T), after build_brand_source.py:
 
     exec(open(r'C:\\Users\\ljlco\\source\\repos\\CodexProjects\\ReactiveVisualEngineCode\\touchDesigner\\tools\\build_module_host.py').read())
 
-    MOTION_OUT -> every host's in1_motion
-    module_host (base_scene) -> hit_host (hit_fx) -> brand_host (brand_overlay)
-                                    image              image
+    MOTION_OUT -> every host's in1_motion, and output's
+    module_host -> hit_host -> brand_host -> finish_host -> output -> OUTPUT
+    (base_scene)   (hit_fx)   (brand_overlay) (finish_fx)  (safety)  (Null TOP)
     BRAND -> brand_host in3_brand     LOGO -> brand_host in4_logo
 
-module_host is the Block 2 wrapper; hit_host (Block 4) and brand_host
-(Block 5) are the same wrapper in later slots, each taking the previous
-host's output as its image. finish_fx follows the same pattern in Block 6.
+module_host is the Block 2 wrapper; hit_host (Block 4), brand_host (Block 5)
+and finish_host (Block 6) are the same wrapper in later slots, each taking the
+previous host's output as its image. output is not a module slot: it is the
+runtime's own final safety stage, and OUTPUT is the one terminal a display
+reads.
 
 Re-running destroys and rebuilds every host COMP, so it is safe to run repeatedly;
 each carries its Modulepath and Moduletype across rebuilds. Because a rebuild
@@ -349,4 +351,105 @@ if 3 not in brand_extra:
     print('WARNING no /project1/BRAND - run build_brand_source.py, then rebuild')
 brand_host = build_host('brand_host', 9600, 0, 'brand_overlay',
                         image_src=hit_host, extra=brand_extra)
+finish_host = build_host('finish_host', 11200, 0, 'finish_fx', image_src=brand_host)
+
+# ------------------------------------------------------------------ /output
+# Final hardware safety, after every module and never bypassed
+# (SCENE_MODULE_SPEC s10.4: finish modules must not bypass it). It owns what
+# no module may be trusted with: NaN/Inf removal, a hard 0..1 clamp, the
+# blackout_gate lane, a manual blackout and a brightness ceiling for the
+# projector. Display routing (a Window COMP) comes later.
+OUTPUT_SHADER = r'''
+// /output safety stage. Runs on every frame that leaves the runtime.
+uniform vec4 uSafety;   // x blackout_gate, y Maxbrightness, z manual blackout (1 = black)
+
+layout(location = 0) out vec4 fragColor;
+
+void main()
+{
+    vec4 c = texture(sTD2DInputs[0], vUV.st);
+    vec3 rgb = c.rgb;
+    // NaN/Inf to black: comparisons with NaN are false, so test explicitly
+    if (any(isnan(rgb)) || any(isinf(rgb)))
+        rgb = vec3(0.0);
+    float gain = clamp(uSafety.x, 0.0, 1.0) * clamp(uSafety.y, 0.0, 1.0)
+               * (1.0 - clamp(uSafety.z, 0.0, 1.0));
+    rgb = clamp(rgb, 0.0, 1.0) * gain;
+    fragColor = TDOutputSwizzle(vec4(rgb, 1.0));
+}
+'''
+
+
+def build_output(src_host):
+    keep = {}
+    old = ROOT.op('output')
+    if old is not None:
+        for nm in ('Maxbrightness', 'Blackout'):
+            p = getattr(old.par, nm, None)
+            if p is not None:
+                keep[nm] = p.eval()
+        old.destroy()
+    for nm in ('OUTPUT',):
+        o = ROOT.op(nm)
+        if o is not None:
+            o.destroy()
+
+    out = ROOT.create(baseCOMP, 'output')
+    out.nodeX, out.nodeY = 12800, 0
+    out.nodeWidth, out.nodeHeight = 900, 300
+
+    page = out.appendCustomPage('Output')
+    p = page.appendFloat('Maxbrightness', label='Max Brightness')[0]
+    p.default = 1
+    p.normMin, p.normMax = 0, 1
+    p.min, p.max = 0, 1
+    p.clampMin = p.clampMax = True
+    p.val = keep.get('Maxbrightness', 1)
+    p = page.appendToggle('Blackout')[0]
+    p.default = 0
+    p.val = keep.get('Blackout', 0)
+
+    img = out.create(inTOP, 'in0_image')
+    img.nodeX, img.nodeY = 0, 0
+    mot = out.create(inCHOP, 'in1_motion')
+    mot.nodeX, mot.nodeY = 0, -300
+
+    shader = out.create(textDAT, 'safety_shader')
+    shader.nodeX, shader.nodeY = 300, 300
+    shader.text = OUTPUT_SHADER
+
+    fx = out.create(glslTOP, 'safety')
+    fx.nodeX, fx.nodeY = 300, 0
+    fx.inputConnectors[0].connect(img)
+    fx.par.pixeldat = 'safety_shader'
+    fx.seq.vec.numBlocks = 1
+    fx.par.vec0name = 'uSafety'
+    # blackout_gate defaults to 1 when the motion input or lane is absent
+    fx.par.vec0valuex.expr = ("op('in1_motion')['blackout_gate'].eval() "
+                              "if op('in1_motion')['blackout_gate'] is not None else 1")
+    fx.par.vec0valuey.expr = 'parent().par.Maxbrightness'
+    fx.par.vec0valuez.expr = 'parent().par.Blackout'
+
+    o1 = out.create(outTOP, 'out1')
+    o1.nodeX, o1.nodeY = 600, 0
+    o1.inputConnectors[0].connect(fx)
+
+    out.inputConnectors[0].connect(src_host.outputConnectors[0])
+    motion = ROOT.op('MOTION_OUT')
+    if motion is not None:
+        out.inputConnectors[1].connect(motion)
+
+    term = ROOT.create(nullTOP, 'OUTPUT')
+    term.nodeX, term.nodeY = 14400, 0
+    term.nodeWidth, term.nodeHeight = 900, 300
+    term.inputConnectors[0].connect(out.outputConnectors[0])
+
+    print('output built at %s -> %s' % (out.path, term.path))
+    print('  image from    :', [c.owner.name for c in out.inputConnectors[0].connections])
+    print('  motion wired  :', bool(out.inputConnectors[1].connections))
+    print('  Maxbrightness :', out.par.Maxbrightness.eval(), ' Blackout:', out.par.Blackout.eval())
+    return out
+
+
+build_output(finish_host)
 print('pulse Load on each host to (re)load its module')

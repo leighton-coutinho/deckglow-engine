@@ -1,0 +1,39 @@
+{
+  "schema": "deckglow.scene-module/1",
+  "id": "com.deckglow.projector_safe",
+  "type": "finish_fx",
+  "displayName": "Projector Safe",
+  "author": "DeckGlow",
+  "version": "1.0.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "entry": "module.tox",
+  "thumbnail": "thumbnail.png",
+  "performanceTier": "light",
+  "tags": ["finish", "projector", "subtle"],
+  "controls": [
+    {
+      "parameter": "Warmth",
+      "label": "Warmth",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.3,
+      "group": "Colour"
+    },
+    {
+      "parameter": "Punch",
+      "label": "Punch",
+      "type": "float",
+      "min": 0.0,
+      "max": 0.3,
+      "default": 0.08,
+      "group": "Response"
+    }
+  ],
+  "description": "Restrained finishing: softness, contrast and brightness with a gentle mood-driven warmth tint and a small lift on wide impacts, clamped to a safe range.",
+  "capabilities": {
+    "usesPython": false,
+    "usesAudioFileIn": false,
+    "supportsAlphaAssets": false
+  }
+}

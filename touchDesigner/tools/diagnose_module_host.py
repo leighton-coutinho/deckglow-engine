@@ -7,7 +7,7 @@ Run inside TouchDesigner's textport (Alt+T):
 Read-only. Changes nothing.
 """
 
-HOSTS = ['module_host', 'hit_host', 'brand_host']
+HOSTS = ['module_host', 'hit_host', 'brand_host', 'finish_host']
 
 
 def show(label, fn):
@@ -79,6 +79,33 @@ def dump(name):
         show('out_switch (0=shown 1=pass)', lambda: m.op('render/out_switch').par.index.eval())
 
 
+    # projector_safe specifics
+    fin = m.op('render/finish')
+    if fin:
+        show('finish errors', lambda: fin.errors() or '(none)')
+        show('uFinish (c, b, soft, clamp)', lambda: tuple(round(getattr(fin.par, 'vec0value' + k).eval(), 3) for k in 'xyzw'))
+        show('uMood (tint, punch, int)', lambda: tuple(round(getattr(fin.par, 'vec1value' + k).eval(), 3) for k in 'xyz'))
+        show('out_switch (0=finish 1=pass)', lambda: m.op('render/out_switch').par.index.eval())
+
+
+def dump_output():
+    o = op('/project1/output')
+    print('=' * 60)
+    print('OUTPUT', o)
+    if not o:
+        print('  output does not exist - run build_module_host.py')
+        return
+    s = o.op('safety')
+    show('image from', lambda: [c.owner.name for c in o.inputConnectors[0].connections] or '(none)')
+    show('motion wired', lambda: bool(o.inputConnectors[1].connections))
+    show('safety errors', lambda: s.errors() or '(none)')
+    show('blackout_gate', lambda: s.par.vec0valuex.eval())
+    show('Maxbrightness', lambda: o.par.Maxbrightness.eval())
+    show('Blackout', lambda: o.par.Blackout.eval())
+    show('OUTPUT res', lambda: '%dx%d' % (op('/project1/OUTPUT').width, op('/project1/OUTPUT').height))
+
+
 for n in HOSTS:
     dump(n)
+dump_output()
 print('=' * 60)

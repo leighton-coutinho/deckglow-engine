@@ -19,10 +19,11 @@ table's current rows.
 
 ROOT = op('/project1')
 
+# No subtitle row: the owner's lockup is just the name (2026-11-05). subtitle
+# stays an optional key (spec s8.2) - add a row to show one.
 DEFAULT_ROWS = [
     ['key',            'value'],
     ['displayName',    'DJ NAME'],
-    ['subtitle',       'LIVE'],
     ['mode',           'logo_and_name'],
     ['primaryColor',   '1.0,0.82,0.1,1.0'],
     ['secondaryColor', '0.1,0.35,1.0,1.0'],
