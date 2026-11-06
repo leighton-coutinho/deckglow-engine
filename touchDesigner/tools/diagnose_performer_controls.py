@@ -10,7 +10,7 @@ For each scaled lane it compares the live MOTION_OUT value with
 clamp(source * control) computed independently from the source node, so a
 PASS means the multiply really happened. With every control at 1.0 that only
 proves the wiring; set one to 0.5 on performer_controls and run this again.
-masterIntensity at 0.5 should move eight lanes, textureAmount two, and every
+masterIntensity at 0.5 should move nine lanes, textureAmount two, and every
 other control one.
 """
 
@@ -68,6 +68,7 @@ else:
         ('impact_fast',   ['flashAmount', M],   ENGINE,                  'hit'),
         ('impact_wide',   [M],                  A.op('lag_impact_wide'), 0),
         ('sync_level',    [M],                  ENGINE,                  'sync'),
+        ('sync_bar_env',  [M],                  A.op('ex_bar'),          0),
         ('texture_level', ['textureAmount', M], ENGINE,                  'density'),
         ('texture_jitter',['textureAmount', M], A.op('mul_jitter'),      0),
         ('mood_warmth',   ['toneAmount'],       ENGINE,                  'tone'),

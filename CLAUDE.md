@@ -297,7 +297,7 @@ written against final lane semantics. Layout:
   lane_<x> + ctl_<amount> ─ scale_<x> (Math mul) ─ motion_merge ─ clamp_lanes ─ out1
 ```
 
-Nine lanes are scaled, as HYBRID_RUNTIME_ARCHITECTURE defines them:
+Ten lanes are scaled, as HYBRID_RUNTIME_ARCHITECTURE defines them:
 
 | Lane | × |
 | --- | --- |
@@ -306,12 +306,13 @@ Nine lanes are scaled, as HYBRID_RUNTIME_ARCHITECTURE defines them:
 | `impact_fast` | `flashAmount` × `masterIntensity` |
 | `impact_wide` | `masterIntensity` |
 | `sync_level` | `masterIntensity` |
+| `sync_bar_env` | `masterIntensity` |
 | `texture_level` | `textureAmount` × `masterIntensity` |
 | `texture_jitter` | `textureAmount` × `masterIntensity` |
 | `mood_warmth` | `toneAmount` |
 | `brand_pulse` | `brandAmount` × `masterIntensity` |
 
-The other seven pass through. `clamp_lanes` limits every lane to `0..1` except
+The other six pass through. `clamp_lanes` limits every lane to `0..1` except
 `sync_sine`.
 
 `motion_adapter` itself is still the hand-built Block 1 network in the `.toe`;
@@ -324,6 +325,12 @@ halved (`body_level 0.65 → 0.325`, `texture_level 0.45 → 0.225`, and so on) 
 `mood_warmth` held at `0.5`. `brand_pulse`'s source read `0.2146 = 0.25 ×
 impact_wide 0.8585`, confirming it is not double-scaled by the master through
 `impact_wide`.
+
+**`sync_bar_env` added to the master list afterwards, verified in test mode**
+(2026-11-05): ten PASS rows at master `0.5`, and `kinetic_stripes`' bar zoom
+visibly shrinks with master turned down. Then run end to end with the real
+engine and music (live mode, `engine_input_mode` index `0`): `kinetic_stripes`
+moves with the track through `module_host`.
 
 Test mode is the easiest place to check: `engine_in/test_levels` holds
 `drive 0.65`, `density 0.45`, `tone 0.5`. The saved `.toe` has
@@ -343,7 +350,10 @@ turning "master" down expects flashes and texture to calm too; scaling only
 is deliberate and is not the double-multiply problem §9.1 removed, which was
 the *same* control applied at two levels. Timing lanes are excluded because a
 scaled phase ramp sweeps halfway and stops; colour lanes because scaling them
-shifts the palette rather than the energy. `texture_jitter` is included (and
+shifts the palette rather than the energy. Envelopes are not timing:
+`sync_bar_env` was first grouped with the phase lanes, which left
+`kinetic_stripes`' 2× bar zoom firing at full with master at `0`, so it was
+moved onto the master list. `texture_jitter` is included (and
 also follows `textureAmount`): busy detail such as grain and shimmer is the first
 thing a VJ pulls back, and the unscaled timing lanes already keep the screen
 alive at master `0`. Spec updated in
@@ -355,11 +365,6 @@ HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
   the last usable tempo". The implementation is a fixed 2 Hz LFO, so it always
   falls back to 120 BPM. Either correct the docs or wire `/rve/v2/tempo/bpm`
   into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
-- **`sync_bar_env` ignores `masterIntensity`, so `kinetic_stripes`' bar zoom —
-  its biggest move, up to 2× — fires at full even with master at `0`.** It was
-  grouped with the timing lanes, but it is an envelope (an amount), not a phase,
-  so scaling it is safe. Recommended fix: add it to the master list in
-  `build_performer_controls.py` and the lane spec. Owner's call.
 - **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
   texture branch was locked and its palette is fixed. So `textureAmount` and
   `toneAmount` have no effect on this scene, and `Paletteindex` is present but
@@ -410,6 +415,12 @@ HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
   and the patch agree; the doc is wrong.
 - Run the engine with music already playing:
   `x64\Debug\ReactiveVisualEngine.exe`. It prints a live macro readout useful
-  for cross-checking against TD.
+  for cross-checking against TD. From PowerShell it needs the call operator —
+  `& "...\ReactiveVisualEngine.exe"`; a bare quoted path just echoes the string.
 - Test mode (`engine_input_mode` Index `1`) needs no engine running — use it for
-  scene development.
+  scene development. Its generators in `engine_in` are fixed levels
+  (`test_levels`: drive 0.65, density 0.45, tone 0.5) plus LFOs: `hit` a 2 Hz
+  pulse, `beat_phase` a 2 Hz ramp (120 BPM), `bar_phase` a 0.5 Hz ramp.
+- **Live mode (Index `0`) with no engine running shows no movement.** `oscin1`
+  has nothing to receive and holds its last values. That is expected, not a
+  fault — start the engine with music playing.

@@ -146,7 +146,9 @@ Rules:
 - user controls are multiplied in later layers, not written back into the raw macro channels
 - `masterIntensity` is the master fader: it multiplies every energy lane on top of
   that lane's own amount, and never touches timing (`sync_phase`, `sync_sine`,
-  `sync_triangle`, `sync_bar_env`), colour (`mood_*`), `impact_trigger` or `blackout_gate`
+  `sync_triangle`), colour (`mood_*`), `impact_trigger` or `blackout_gate`.
+  Envelopes such as `sync_level` and `sync_bar_env` are amounts, not phases, so
+  they are scaled
 - all scene modules read the same local macro names
 
 ## Motion Adapter
@@ -236,7 +238,8 @@ blackout_gate
 `sync_bar_env`
 
 - slower rhythmic accent envelope
-- derived from the engine's bar phase, decaying across the start of each bar
+- derived from the engine's bar phase, decaying across the start of each bar,
+  scaled by `masterIntensity`
 - use for stronger phrase-like movement without exposing raw bar pulses
 
 `texture_level`

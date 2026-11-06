@@ -51,14 +51,16 @@ CONTROLS = [
 # HYBRID_RUNTIME_ARCHITECTURE.md. Every other lane passes through unscaled.
 #
 # masterIntensity is the master fader: it multiplies every *energy* lane on top
-# of that lane's own amount. It never touches timing (sync_phase/sine/triangle,
-# sync_bar_env), colour (mood_*), the impact_trigger event or blackout_gate.
+# of that lane's own amount. It never touches timing (sync_phase/sine/triangle),
+# colour (mood_*), the impact_trigger event or blackout_gate. sync_bar_env is an
+# accent envelope (an amount, not a phase), so it is scaled like sync_level.
 SCALED = {
     'body_level':    ['masterIntensity'],                  # drive
     'body_drift':    ['motionAmount', 'masterIntensity'],  # lag(drive)
     'impact_fast':   ['flashAmount', 'masterIntensity'],   # hit
     'impact_wide':   ['masterIntensity'],                  # lag(hit)
     'sync_level':    ['masterIntensity'],                  # sync
+    'sync_bar_env':  ['masterIntensity'],                  # bar accent
     'texture_level': ['textureAmount', 'masterIntensity'], # density
     'texture_jitter':['textureAmount', 'masterIntensity'], # noise * density
     'mood_warmth':   ['toneAmount'],                       # tone
