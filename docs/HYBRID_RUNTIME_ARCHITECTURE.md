@@ -262,7 +262,7 @@ blackout_gate
 `brand_pulse`
 
 - restrained branding accent lane
-- derived mostly from `impact_wide` with a low ceiling
+- derived mostly from `impact_wide` with a low ceiling, scaled by `brandAmount`
 - use for tasteful logo brightness or name emphasis
 
 `blackout_gate`
@@ -279,6 +279,8 @@ blackout_gate
 - the adapter is the only place performer controls are applied; modules receive
   lanes that are already scaled and must not re-apply `masterIntensity`,
   `motionAmount`, `flashAmount`, `textureAmount`, `toneAmount` or `brandAmount`
+- the adapter clamps every lane to `0..1` after scaling, except `sync_sine`,
+  which is bipolar `-1..1`
 - scenes should never derive their own beat oscillators if `sync_*` lanes exist
 - scenes should not reconstruct beat position from `sync_level`; `sync_phase` is
   the only phase lane

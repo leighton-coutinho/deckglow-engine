@@ -86,6 +86,8 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_module_host.py` | Builds `/project1/module_host`. Idempotent; carries `Modulepath` across rebuilds. |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
 | `diagnose_module_host.py` | Read-only state dump of the host and loaded module. **Use this before guessing.** |
+| `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
+| `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
 
 Why: custom parameters serialize as opaque magic type codes (`772804868`,
 `-1374678769`) whose *field layout differs between files from the same
@@ -231,14 +233,40 @@ regardless of module quality, which matters once creator packs ship modules the
 runtime did not author. Written up in
 [SCENE_MODULE_SPEC.md §9.1](docs/SCENE_MODULE_SPEC.md).
 
-**Still to implement.** The control channels do not exist yet; `motion_adapter`
-currently passes lanes through unscaled. Build them before Block 3 so
+**Implemented by script and verified live** (2026-11-05).
+`build_performer_controls.py` builds it; it had to land before Block 3 so
 `kinetic_stripes` — the reference every later module gets copied from — is
-written against final lane semantics. They belong between `ENGINE_INPUT` and
-`motion_adapter`, as a Constant CHOP of control values merged with the engine
-channels, with the lane maths in `motion_adapter` updated to multiply
-(`body_level = drive * masterIntensity`, and so on per the lane definitions in
-HYBRID_RUNTIME_ARCHITECTURE).
+written against final lane semantics. Layout:
+
+```
+/project1
+  ENGINE_INPUT ──┐
+                 ├─ engine_controls (Merge) ─ motion_adapter ─ MOTION_OUT
+  performer_controls (Constant, six amounts, default 1.0) ┘
+
+/project1/motion_adapter
+  lane_<x> + ctl_<amount> ─ scale_<x> (Math mul) ─ motion_merge ─ clamp_lanes ─ out1
+```
+
+Six lanes are scaled, one control each, exactly as HYBRID_RUNTIME_ARCHITECTURE
+defines them: `body_level`×`masterIntensity`, `body_drift`×`motionAmount`,
+`impact_fast`×`flashAmount`, `texture_level`×`textureAmount`,
+`mood_warmth`×`toneAmount`, `brand_pulse`×`brandAmount`. The other ten pass
+through. `clamp_lanes` limits every lane to `0..1` except `sync_sine`.
+
+`motion_adapter` itself is still the hand-built Block 1 network in the `.toe`;
+the script owns only `ctl_*`, `scale_*`, `clamp_lanes` and the input wiring of
+`motion_merge` and `out1`. Save the `.toe` after running it.
+
+Verified in test mode: all six lanes PASS at `1.0`, and with `masterIntensity`
+at `0.51` only `body_level` moved (`0.8320 → 0.4243`, i.e. `× 0.51`) while the
+other five held. The other five controls were not individually stepped; they are
+built by the same loop, so a failure there would be a wiring typo, which the
+diagnose script would flag.
+
+To re-check: run the builder (it prints a PASS/FAIL table two frames later), or
+change a value on `performer_controls` (`par.const0value`..`const5value`) and
+run `diagnose_performer_controls.py`.
 
 ## Open decisions and known gaps
 
@@ -246,8 +274,13 @@ HYBRID_RUNTIME_ARCHITECTURE).
   the last usable tempo". The implementation is a fixed 2 Hz LFO, so it always
   falls back to 120 BPM. Either correct the docs or wire `/rve/v2/tempo/bpm`
   into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
-- **No output clamp** in `motion_adapter`. Spec says clamp every lane except
-  `sync_sine`. Nothing is currently out of range, so it is latent.
+- **`masterIntensity` scales only `body_level`.** That is what the lane
+  definitions say and what was built, but a "master" control that leaves
+  flashes, texture and sync untouched may not be what a DJ expects. Confirm
+  with the owner before Block 3 copies the semantics into every module.
+- **`toneAmount` at `0` pins `mood_warmth` to `0`** (fully cool), not to a
+  neutral `0.5`, and `mood_softness` (`1 - tone`) ignores it. Spec-literal;
+  worth a second look if "less tone influence" should mean "more neutral".
 - **Where performer controls are surfaced.** Decided that the adapter applies
   them, but not yet how a DJ sets them — a TouchDesigner UI panel, MIDI, or an
   external frontend. V2_ARCHITECTURE block 6 covers this; nothing depends on it
