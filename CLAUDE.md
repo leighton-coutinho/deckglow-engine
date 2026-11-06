@@ -175,7 +175,11 @@ in0_image, in3_logo, name_text, sub_text ─ render/lockup_fx  GLSL Multi TOP
 - `mode` from the brand DAT: `logo`, `name`, `logo_and_name` — tokens the spec
   did not define, now written into SCENE_MODULE_SPEC §8.2. Without visible logo
   pixels it falls back to the name. An unwired In TOP still yields a blank
-  texture, so "logo present" tests alpha, at most every 60 frames.
+  texture, so "logo present" tests alpha — since 1.0.1 every frame, through
+  `render/logo_probe` (Analyze, average) → `render/logo_alpha` (TOP to CHOP,
+  immediate). 1.0.0 sampled with `numpyArray()` every 60 frames and showed the
+  name-only fallback for ~1 s after every load before jumping to the logo;
+  the Block 7 validator caught it.
 - Vertical stack (logo, name, subtitle), anchored by `Placement` inside a safe
   area of `Safearea` × frame height on each edge; shrinks to fit. Default
   placement is `bottom_right` (the spec gives none).
@@ -264,7 +268,97 @@ separate window (testing), `par.performance.pulse()` opens Perform Mode, which
 TouchDesigner's docs recommend for final output. Re-running keeps the chosen
 display.
 
-**Blocks 7–8 remain.** See *Remaining work*.
+**Block 7 — scene library and quarantine validation: done and verified**
+(2026-11-05). The owner approved the four first-party modules
+(`library/approved.json`: kinetic_stripes 1.0.0, orb_burst 1.0.0,
+clean_lockup 1.0.1, projector_safe 1.0.0); `stub_scene` stays unapproved.
+`LoadApproved('hit_host', 'com.deckglow.orb_burst')` loaded, and
+`LoadApproved` on the stub was refused.
+
+Two parts. `tools/validate_static.py` is plain Python (§15.1) and runs
+outside TouchDesigner too:
+
+```bash
+"C:/Program Files/Derivative/TouchDesigner/bin/python.exe" -I touchDesigner/tools/validate_static.py touchDesigner/modules
+```
+
+It checks every manifest rule in §5, paths kept inside the module folder, the
+`runtimeApi` range against `RUNTIME_API 2.0.0`, the thumbnail's PNG signature
+and 16:9 size, control declarations, duplicate ids, and — via `toeexpand` —
+absolute paths baked into the `.tox`. Raw `.tox` files are compressed, so the
+scan expands a temp copy; a `.tox` toeexpand cannot read fails. All five
+modules pass; 26 deliberately broken cases (bad JSON, wrong schema, upper-case
+id, excluded API range, 9 tags, bad controls, escaping/absolute entry, non-PNG
+thumbnail, an injected `C:/Users/...` path inside a real `.tox`, an unreadable
+`.tox`, duplicate ids) each fail the right check.
+
+`tools/build_scene_library.py` builds `/project1/scene_library`:
+
+```
+scene_library
+  static_checks  validate_static.py, embedded
+  library        Python: Scan, ValidateAll, Validate, Approve, Revoke,
+                 IsApproved, LoadApproved, Summary
+  LIBRARY        one row per module: static / quarantine / approved
+  RESULTS        every check from the last run
+  quarantine     syn_motion (16 lanes), syn_image (gradient), syn_palette,
+                 syn_brand, syn_logo, res_probe — and the module under test
+```
+
+`ValidateAll()` loads each module into quarantine in turn (about 10 s each,
+driven by chained `run(..., delayFrames=n)`), wires synthetic inputs by slot
+type, then: interface checks (§15.2: In operators by name, family and
+connector index; `render`/`out1`; standard and slot parameters with the right
+page, style and menu tokens; reserved names; declared controls matching
+`Controls`-page parameters), runtime checks (§15.3: Idle stable, Drive sweep,
+Hit bounded — and responding, for hit_fx — Sync motion for base scenes, Dense
+cook time and no operator growth, Reset clears, Bypass exact pass-through for
+non-base), and admission (§15.4: resolution matches `res_probe`, nothing
+created or destroyed outside quarantine, cook time recorded). Frames are read
+back with `numpyArray()` at 1/8 resolution and checked for NaN/Inf.
+
+Reports land in `touchDesigner/validation/<folder>.json` — **read these
+directly instead of asking the owner to paste output.** Approvals live in
+`touchDesigner/library/approved.json`, per id *and version*: a new version is
+`stale` until re-validated and re-approved. `LoadApproved(host, id)` is the
+gated path into a host; a host's own `Modulepath` + `Load` stays as the
+development path. The discovery, report and approval flow was tested outside
+TD with stand-ins (refusals before validation and after a fail, stale on a
+version bump, revoke).
+
+**First run (2026-11-05) found a validator bug, not a module bug.** kinetic,
+lockup and projector passed; stub warned "black at idle" as expected; but
+`orb_burst` failed "hit response" with zero change and every cook time read
+0.00 ms. Cause: lazy cooking again. Nothing in quarantine views the module, so
+it only cooked when a frame was read back — and `impact_trigger` lasts one
+frame, which nothing asked to cook, so the orb pool never saw it. Fix: the
+runner now ticks every frame and force-cooks the module's `out1` each tick
+(`_cook()`), and cook time is the wall time of that forced cook (CPU plus GPU
+submission) with `childrenGPUCookTime` alongside.
+
+**Second run, with the fix:** `orb_burst` passes (hit response 0.714, settles
+30 frames after the envelope); `kinetic_stripes` and `projector_safe` pass;
+`stub_scene` warns as expected; real cook times 0.19–0.58 ms avg, all far
+under the 4 ms budget. **`clean_lockup` failed — a real module bug** that the
+first run's lazy cooking had hidden: its logo check sampled every 60 frames,
+so after load it showed the name-only fallback, then jumped to logo-and-name
+mid-test (0.776 change in "hit bounded" and "reset clears", which drive
+nothing the lockup reads). Fixed in clean_lockup 1.0.1 with a per-frame alpha
+probe (see Block 5).
+
+**Third run:** clean_lockup 1.0.1 passes — all 25 interface checks, idle
+stable, hit bounded, reset clears (0.000), exact pass-through, isolation;
+0.56 ms avg. All four first-party modules now pass quarantine; `stub_scene`
+warns (black at idle) and is a test fixture, not for approval.
+
+Rule worth keeping: **anything that tests a module must cook it every frame**,
+or one-frame events and time-based state are invisible to the test.
+
+Expected findings: `stub_scene` warns "black at idle" (a flat-colour
+fixture), and `clean_lockup` shows no hit/sync response (info, not a
+failure).
+
+**Block 8 remains.** See *Remaining work*.
 
 ### Which file is current
 
@@ -289,12 +383,14 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | Script | Purpose |
 | --- | --- |
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
+| `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |
+| `build_scene_library.py` | Builds `/project1/scene_library`: discovery, quarantine (§15.2–15.4), JSON reports in `validation/`, per-version approvals in `library/approved.json`, and the gated `LoadApproved`. |
 | `build_projector_window.py` | Builds `/project1/projector`, the Window COMP that shows `OUTPUT` full-screen on a display. Never opens it; prints the open/close commands and the detected displays. |
 | `build_projector_safe.py` | Builds and exports `modules/projector_safe/module.tox` and `thumbnail.png` (rendered over kinetic_stripes' thumbnail, so Block 3 must be exported). |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
 | `diagnose_module_host.py` | Read-only state dump of every host and its loaded module, including orb pool, shader and lockup layout state. **Use this before guessing.** |
 | `build_brand_source.py` | Stand-in branding runtime: `/project1/BRAND` (brand DAT) and `/project1/LOGO` (placeholder logo TOP). Keeps edited table rows across rebuilds. Run before `build_module_host.py`. |
-| `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `LOGO`; uses its own demo brand table for the thumbnail; waits 70 frames so the logo check has sampled. |
+| `build_clean_lockup.py` | Builds and exports `modules/clean_lockup/module.tox` and `thumbnail.png`. Needs `LOGO`; uses its own demo brand table for the thumbnail. |
 | `build_orb_burst.py` | Builds and exports `modules/orb_burst/module.tox` and `thumbnail.png`. Checks the shader compiled and the pool produced orbs before saving. |
 | `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
 | `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
@@ -436,9 +532,11 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
    ~~Done~~ — verified, including the flash limiter and the `projector`
    Window COMP.
-7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
-   **This is the next block.**
+7. ~~Quarantine validation and manifest discovery~~ — done (see *Current state*).
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
+   **This is the next block.** Settle the open decisions that touch the
+   contract first (fallback tempo, `Paletteindex` overlap, `toneAmount`
+   semantics, the 1080p licence question).
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).

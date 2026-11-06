@@ -1,0 +1,36 @@
+{
+  "approved": {
+    "com.deckglow.clean_lockup": {
+      "approved": "2026-11-05T22:34:27",
+      "folder": "clean_lockup",
+      "note": "",
+      "result": "pass",
+      "validated": "2026-11-05T22:31:04",
+      "version": "1.0.1"
+    },
+    "com.deckglow.kinetic_stripes": {
+      "approved": "2026-11-05T22:34:16",
+      "folder": "kinetic_stripes",
+      "note": "",
+      "result": "pass",
+      "validated": "2026-11-05T22:28:02",
+      "version": "1.0.0"
+    },
+    "com.deckglow.orb_burst": {
+      "approved": "2026-11-05T22:34:20",
+      "folder": "orb_burst",
+      "note": "",
+      "result": "pass",
+      "validated": "2026-11-05T22:28:07",
+      "version": "1.0.0"
+    },
+    "com.deckglow.projector_safe": {
+      "approved": "2026-11-05T22:34:30",
+      "folder": "projector_safe",
+      "note": "",
+      "result": "pass",
+      "validated": "2026-11-05T22:28:11",
+      "version": "1.0.0"
+    }
+  }
+}

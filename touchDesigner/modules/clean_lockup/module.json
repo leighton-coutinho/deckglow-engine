@@ -4,7 +4,7 @@
   "type": "brand_overlay",
   "displayName": "Clean Lockup",
   "author": "DeckGlow",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "runtimeApi": ">=2.0.0 <3.0.0",
   "entry": "module.tox",
   "thumbnail": "thumbnail.png",

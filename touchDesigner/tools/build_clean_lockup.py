@@ -189,7 +189,6 @@ SUB_ASPECT = 16.0        # sub_text is 16:1
 MODES = ('logo', 'name', 'logo_and_name')
 
 _cache = {'frame': None, 'value': None}
-_logo = {'frame': -9999, 'present': False}
 
 
 def _root():
@@ -221,17 +220,17 @@ def Color(key, default):
 
 
 def LogoPresent():
-    """True when in3_logo carries visible pixels. An unwired In TOP still
-    yields a blank texture, so test alpha - at most every 60 frames."""
-    f = absTime.frame
-    if f - _logo['frame'] >= 60 or f < _logo['frame']:
-        _logo['frame'] = f
-        try:
-            a = _root().op('in3_logo').numpyArray()
-            _logo['present'] = bool(a[:, :, 3].max() > 0.01)
-        except Exception:
-            _logo['present'] = False
-    return _logo['present']
+    """True when the logo input carries visible pixels. An unwired In TOP
+    still yields a blank texture, so test its alpha: render/logo_probe
+    (Analyze, average) -> render/logo_alpha (TOP to CHOP), every frame.
+
+    1.0.0 read the image back with numpyArray() at most every 60 frames, so
+    right after load it saw the not-yet-cooked logo as absent, showed the
+    name-only fallback, then jumped to logo_and_name about a second later.
+    The quarantine validator caught it ('hit bounded' / 'reset clears')."""
+    probe = parent().op('logo_alpha')
+    c = probe['a'] if probe is not None else None
+    return c is not None and c.eval() > 1e-4
 
 
 def Mode():
@@ -436,6 +435,18 @@ place(in_image, 0, 200)
 in_logo = render.create(inTOP, 'in_logo')
 place(in_logo, 0, -100)
 
+# per-frame "is there a logo" probe: average alpha, downloaded as one value
+logo_probe = render.create(analyzeTOP, 'logo_probe')
+place(logo_probe, 0, -400)
+logo_probe.inputConnectors[0].connect(in_logo)
+logo_probe.par.op = 'average'
+logo_alpha = render.create(toptoCHOP, 'logo_alpha')
+place(logo_alpha, 300, -400)
+logo_alpha.par.top = 'logo_probe'
+# immediate, not nextframe: under lazy cooking a probe nobody read last frame
+# would return a stale value on its first read. One pixel, so it is cheap.
+logo_alpha.par.downloadtype = 'immediate'
+
 
 def text_top(name, aspect, px_key, x, y):
     t = render.create(textTOP, name)
@@ -572,4 +583,4 @@ if not os.path.isdir(MODULE_DIR):
     os.makedirs(MODULE_DIR)
 
 run(STAGE % {'build': m.path, 'bg': bg.path, 'demo': demo.path, 'tox': TOX, 'thumb': THUMB},
-    delayFrames=70)   # > 60 so LogoPresent() has sampled the wired logo
+    delayFrames=10)

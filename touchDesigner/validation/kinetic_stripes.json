@@ -1,0 +1,288 @@
+{
+  "folder": "kinetic_stripes",
+  "id": "com.deckglow.kinetic_stripes",
+  "version": "1.0.0",
+  "type": "base_scene",
+  "started": "2026-11-05T22:27:58",
+  "touchdesigner": "099.2025.32280",
+  "static": {
+    "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\kinetic_stripes",
+    "id": "com.deckglow.kinetic_stripes",
+    "type": "base_scene",
+    "version": "1.0.0",
+    "displayName": "Kinetic Stripes",
+    "status": "pass",
+    "checks": [
+      {
+        "check": "manifest",
+        "status": "pass",
+        "detail": "parses"
+      },
+      {
+        "check": "required fields",
+        "status": "pass",
+        "detail": ""
+      },
+      {
+        "check": "schema",
+        "status": "pass",
+        "detail": "'deckglow.scene-module/1'"
+      },
+      {
+        "check": "id",
+        "status": "pass",
+        "detail": "'com.deckglow.kinetic_stripes' (lowercase reverse-domain)"
+      },
+      {
+        "check": "type",
+        "status": "pass",
+        "detail": "'base_scene'"
+      },
+      {
+        "check": "displayName",
+        "status": "pass",
+        "detail": "'Kinetic Stripes' (1-48 characters)"
+      },
+      {
+        "check": "author",
+        "status": "pass",
+        "detail": "'DeckGlow' (1-48 characters)"
+      },
+      {
+        "check": "version",
+        "status": "pass",
+        "detail": "'1.0.0' (semantic version)"
+      },
+      {
+        "check": "runtimeApi",
+        "status": "pass",
+        "detail": "2.0.0 satisfies '>=2.0.0 <3.0.0'"
+      },
+      {
+        "check": "performanceTier",
+        "status": "pass",
+        "detail": "'light'"
+      },
+      {
+        "check": "tags",
+        "status": "pass",
+        "detail": "3"
+      },
+      {
+        "check": "controls",
+        "status": "pass",
+        "detail": "6 declared"
+      },
+      {
+        "check": "capabilities",
+        "status": "pass",
+        "detail": "ok"
+      },
+      {
+        "check": "entry",
+        "status": "pass",
+        "detail": "module.tox"
+      },
+      {
+        "check": "tox paths",
+        "status": "pass",
+        "detail": "no absolute paths"
+      },
+      {
+        "check": "thumbnail",
+        "status": "pass",
+        "detail": "640x360 PNG"
+      }
+    ]
+  },
+  "interface": [
+    {
+      "check": "loads",
+      "status": "pass",
+      "detail": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\kinetic_stripes\\module.tox"
+    },
+    {
+      "check": "no errors",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "input in0_motion",
+      "status": "pass",
+      "detail": "inCHOP "
+    },
+    {
+      "check": "connector in0_motion",
+      "status": "pass",
+      "detail": "index 0, want 0"
+    },
+    {
+      "check": "input in1_palette",
+      "status": "pass",
+      "detail": "inDAT "
+    },
+    {
+      "check": "connector in1_palette",
+      "status": "pass",
+      "detail": "index 1, want 1"
+    },
+    {
+      "check": "render",
+      "status": "pass",
+      "detail": "baseCOMP"
+    },
+    {
+      "check": "out1",
+      "status": "pass",
+      "detail": "outTOP"
+    },
+    {
+      "check": "par Moduleactive",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Intensity",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Seed",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Reset",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Outputwidth",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Outputheight",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Paletteindex",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Stripeperiod",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Stripeshift",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Flash",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Barzoom",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Kickzoom",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Beatdrift",
+      "status": "pass",
+      "detail": ""
+    }
+  ],
+  "runtime": [
+    {
+      "check": "idle valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "idle stable",
+      "status": "pass",
+      "detail": "max change 0.000"
+    },
+    {
+      "check": "resolution",
+      "status": "pass",
+      "detail": "1280x720, stack 1280x720"
+    },
+    {
+      "check": "idle visible",
+      "status": "pass",
+      "detail": "mean 0.403"
+    },
+    {
+      "check": "drive",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "hit bounded",
+      "status": "pass",
+      "detail": "settled 15 frames after the envelope"
+    },
+    {
+      "check": "hit response",
+      "status": "info",
+      "detail": "max change 1.000"
+    },
+    {
+      "check": "sync motion",
+      "status": "pass",
+      "detail": "9 of 11 samples changed"
+    },
+    {
+      "check": "dense cook",
+      "status": "pass",
+      "detail": "avg 0.42 ms, peak 0.53 ms (warn above 4)"
+    },
+    {
+      "check": "dense bounded",
+      "status": "pass",
+      "detail": "operator count changed by 0"
+    },
+    {
+      "check": "dense valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "reset clears",
+      "status": "pass",
+      "detail": "max change from idle 0.000, 3 frames after Reset"
+    },
+    {
+      "check": "bypass",
+      "status": "info",
+      "detail": "not applicable to base_scene"
+    }
+  ],
+  "admission": [
+    {
+      "check": "isolation",
+      "status": "pass",
+      "detail": "nothing outside quarantine created or destroyed"
+    }
+  ],
+  "performance": {
+    "cook_ms_avg": 0.423,
+    "cook_ms_peak": 0.534,
+    "gpu_ms_avg": 0.194,
+    "project_fps": 60.0,
+    "resolution": "1280x720"
+  },
+  "result": "pass",
+  "finished": "2026-11-05T22:28:02"
+}

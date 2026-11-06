@@ -1,0 +1,283 @@
+{
+  "folder": "projector_safe",
+  "id": "com.deckglow.projector_safe",
+  "version": "1.0.0",
+  "type": "finish_fx",
+  "started": "2026-11-05T22:28:07",
+  "touchdesigner": "099.2025.32280",
+  "static": {
+    "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\projector_safe",
+    "id": "com.deckglow.projector_safe",
+    "type": "finish_fx",
+    "version": "1.0.0",
+    "displayName": "Projector Safe",
+    "status": "pass",
+    "checks": [
+      {
+        "check": "manifest",
+        "status": "pass",
+        "detail": "parses"
+      },
+      {
+        "check": "required fields",
+        "status": "pass",
+        "detail": ""
+      },
+      {
+        "check": "schema",
+        "status": "pass",
+        "detail": "'deckglow.scene-module/1'"
+      },
+      {
+        "check": "id",
+        "status": "pass",
+        "detail": "'com.deckglow.projector_safe' (lowercase reverse-domain)"
+      },
+      {
+        "check": "type",
+        "status": "pass",
+        "detail": "'finish_fx'"
+      },
+      {
+        "check": "displayName",
+        "status": "pass",
+        "detail": "'Projector Safe' (1-48 characters)"
+      },
+      {
+        "check": "author",
+        "status": "pass",
+        "detail": "'DeckGlow' (1-48 characters)"
+      },
+      {
+        "check": "version",
+        "status": "pass",
+        "detail": "'1.0.0' (semantic version)"
+      },
+      {
+        "check": "runtimeApi",
+        "status": "pass",
+        "detail": "2.0.0 satisfies '>=2.0.0 <3.0.0'"
+      },
+      {
+        "check": "performanceTier",
+        "status": "pass",
+        "detail": "'light'"
+      },
+      {
+        "check": "tags",
+        "status": "pass",
+        "detail": "3"
+      },
+      {
+        "check": "controls",
+        "status": "pass",
+        "detail": "2 declared"
+      },
+      {
+        "check": "capabilities",
+        "status": "pass",
+        "detail": "ok"
+      },
+      {
+        "check": "entry",
+        "status": "pass",
+        "detail": "module.tox"
+      },
+      {
+        "check": "tox paths",
+        "status": "pass",
+        "detail": "no absolute paths"
+      },
+      {
+        "check": "thumbnail",
+        "status": "pass",
+        "detail": "640x360 PNG"
+      }
+    ]
+  },
+  "interface": [
+    {
+      "check": "loads",
+      "status": "pass",
+      "detail": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\projector_safe\\module.tox"
+    },
+    {
+      "check": "no errors",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "input in0_image",
+      "status": "pass",
+      "detail": "inTOP "
+    },
+    {
+      "check": "connector in0_image",
+      "status": "pass",
+      "detail": "index 0, want 0"
+    },
+    {
+      "check": "input in1_motion",
+      "status": "pass",
+      "detail": "inCHOP "
+    },
+    {
+      "check": "connector in1_motion",
+      "status": "pass",
+      "detail": "index 1, want 1"
+    },
+    {
+      "check": "render",
+      "status": "pass",
+      "detail": "baseCOMP"
+    },
+    {
+      "check": "out1",
+      "status": "pass",
+      "detail": "outTOP"
+    },
+    {
+      "check": "par Moduleactive",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Intensity",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Seed",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Reset",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Outputwidth",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Outputheight",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Contrast",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Brightness",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Softness",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "par Outputclamp",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Warmth",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "control Punch",
+      "status": "pass",
+      "detail": ""
+    }
+  ],
+  "runtime": [
+    {
+      "check": "idle valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "idle stable",
+      "status": "pass",
+      "detail": "max change 0.000"
+    },
+    {
+      "check": "resolution",
+      "status": "pass",
+      "detail": "1280x720, stack 1280x720"
+    },
+    {
+      "check": "drive",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "hit bounded",
+      "status": "pass",
+      "detail": "settled 15 frames after the envelope"
+    },
+    {
+      "check": "hit response",
+      "status": "info",
+      "detail": "max change 0.067"
+    },
+    {
+      "check": "sync motion",
+      "status": "info",
+      "detail": "0 of 11 samples changed"
+    },
+    {
+      "check": "dense cook",
+      "status": "pass",
+      "detail": "avg 0.24 ms, peak 0.35 ms (warn above 4)"
+    },
+    {
+      "check": "dense bounded",
+      "status": "pass",
+      "detail": "operator count changed by 0"
+    },
+    {
+      "check": "dense valid",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "check": "reset clears",
+      "status": "pass",
+      "detail": "max change from idle 0.000, 3 frames after Reset"
+    },
+    {
+      "check": "bypass inactive",
+      "status": "pass",
+      "detail": "max change from input 0.0000"
+    },
+    {
+      "check": "bypass intensity 0",
+      "status": "pass",
+      "detail": "max change from input 0.0000"
+    }
+  ],
+  "admission": [
+    {
+      "check": "isolation",
+      "status": "pass",
+      "detail": "nothing outside quarantine created or destroyed"
+    }
+  ],
+  "performance": {
+    "cook_ms_avg": 0.241,
+    "cook_ms_peak": 0.349,
+    "gpu_ms_avg": 0.024,
+    "project_fps": 60.0,
+    "resolution": "1280x720"
+  },
+  "result": "pass",
+  "finished": "2026-11-05T22:28:11"
+}
