@@ -85,6 +85,9 @@ Each layer has one job:
 - `/scene_library`: discover installed scenes, hit effects, and brand styles
 - `/ui`: local TouchDesigner control surface and optional bridge to external frontend
 - `/output`: final safety clamp, projector-safe finishing, and display routing.
+  The output resolution is a runtime setting (per show or projector, capped by
+  the TouchDesigner licence), never assumed by modules — see
+  SCENE_MODULE_SPEC §6.4.
   It also limits full-frame flashing for photosensitivity: at most three
   general flashes per second by default (an opposing luminance change of 10%
   or more with the darker side below 0.80), enforced by dimming only. It is on

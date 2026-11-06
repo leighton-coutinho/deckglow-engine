@@ -239,6 +239,25 @@ Creators must not repurpose a reserved name for another operator family.
 - remain display-referred RGB unless the module explicitly performs a finish
   operation
 
+### 6.4 Resolution independence
+
+The contract names no resolution. The runtime chooses the output size — per
+show or projector, and the TouchDesigner licence may cap it (Non-Commercial
+limits images to 1280×1280, so a 1920×1080 request renders at 1280×720).
+`Outputwidth`/`Outputheight` are a request; the size actually rendered is the
+reference.
+
+A module must therefore:
+
+- render correctly at any size it is given, from small previews to 4K
+- express every size, position, thickness and blur radius as a fraction of the
+  frame, never as fixed pixels
+- read its real working size from its output or input image, not assume the
+  requested numbers were granted
+
+The validator renders each module at the stack resolution and at a second,
+smaller size, and requires the same picture at both (section 15.3).
+
 The runtime converts the output to its working pixel format. `RGBA16Float` is
 recommended inside the runtime to avoid banding during composition.
 
@@ -361,8 +380,8 @@ parameter names:
 | `Intensity` | Float | `0..1`, default `1` | Scales the module's overall visual contribution. |
 | `Seed` | Integer | default `1` | Makes procedural variation repeatable. |
 | `Reset` | Pulse | n/a | Clears temporal state and restarts deterministic animation. |
-| `Outputwidth` | Integer | default `1920` | Requested render width for base scenes. |
-| `Outputheight` | Integer | default `1080` | Requested render height for base scenes. |
+| `Outputwidth` | Integer | default `1920` | Requested render width for base scenes; the size granted may differ (section 6.4). |
+| `Outputheight` | Integer | default `1080` | Requested render height for base scenes; the size granted may differ (section 6.4). |
 
 Rules:
 
@@ -650,6 +669,8 @@ and receive additional review before approval.
 ## 14. Performance Contract
 
 The product target is stable `60 fps` at the configured projector resolution.
+That resolution is a deployment setting chosen by the runtime (section 6.4),
+not part of the module contract.
 The complete four-slot stack must leave time for TouchDesigner UI, transitions,
 and output routing.
 
@@ -709,13 +730,15 @@ The validator runs synthetic states:
 | Dense | texture lanes at `1` | Stable frame rate and bounded resources. |
 | Reset | stateful content, then `Reset` | Temporal state clears. |
 | Bypass | inactive or zero intensity | Pass-through for non-base slots. |
+| Resolution | the same state at the stack size and at 640×360 | The same picture at both (section 6.4). |
 
 For pass-through modules, a small format-conversion tolerance is acceptable,
 but bypass must not introduce a visible effect.
 
 ### 15.4 Live admission checks
 
-- output resolution matches the stack
+- output resolution matches the resolution the stack actually renders on this
+  machine (which a licence may cap), not a fixed number
 - output remains valid through a warm-up window
 - module does not modify operators outside quarantine
 - measured performance is recorded

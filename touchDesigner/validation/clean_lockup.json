@@ -3,7 +3,7 @@
   "id": "com.deckglow.clean_lockup",
   "version": "1.0.1",
   "type": "brand_overlay",
-  "started": "2026-11-05T22:51:44",
+  "started": "2026-11-06T17:57:39",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\clean_lockup",
@@ -261,7 +261,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.66 ms, peak 0.95 ms (warn above 4)"
+      "detail": "avg 0.60 ms, peak 0.91 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -287,6 +287,16 @@
       "check": "bypass intensity 0",
       "status": "pass",
       "detail": "max change from input 0.0000"
+    },
+    {
+      "check": "second resolution",
+      "status": "pass",
+      "detail": "640x360 for a 640x360 input"
+    },
+    {
+      "check": "resolution independent",
+      "status": "pass",
+      "detail": "mean block change 0.000, peak 0.033 between 1280x720 and 640x360"
     }
   ],
   "admission": [
@@ -297,12 +307,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.661,
-    "cook_ms_peak": 0.954,
-    "gpu_ms_avg": 0.123,
+    "cook_ms_avg": 0.605,
+    "cook_ms_peak": 0.914,
+    "gpu_ms_avg": 0.095,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "pass",
-  "finished": "2026-11-05T22:51:49"
+  "finished": "2026-11-06T17:57:43"
 }

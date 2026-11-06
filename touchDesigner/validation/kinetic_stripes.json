@@ -3,7 +3,7 @@
   "id": "com.deckglow.kinetic_stripes",
   "version": "1.1.0",
   "type": "base_scene",
-  "started": "2026-11-05T22:51:49",
+  "started": "2026-11-06T17:57:43",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\kinetic_stripes",
@@ -241,7 +241,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.44 ms, peak 0.68 ms (warn above 4)"
+      "detail": "avg 0.52 ms, peak 1.89 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -262,6 +262,16 @@
       "check": "bypass",
       "status": "info",
       "detail": "not applicable to base_scene"
+    },
+    {
+      "check": "second resolution",
+      "status": "pass",
+      "detail": "640x360 for a 640x360 request"
+    },
+    {
+      "check": "resolution independent",
+      "status": "pass",
+      "detail": "mean block change 0.004, peak 0.043 between 1280x720 and 640x360"
     }
   ],
   "admission": [
@@ -272,12 +282,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.437,
-    "cook_ms_peak": 0.68,
-    "gpu_ms_avg": 0.284,
+    "cook_ms_avg": 0.515,
+    "cook_ms_peak": 1.893,
+    "gpu_ms_avg": 0.191,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "pass",
-  "finished": "2026-11-05T22:51:53"
+  "finished": "2026-11-06T17:57:47"
 }

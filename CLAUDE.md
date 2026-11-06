@@ -540,7 +540,9 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
    **In progress.** Settle the open decisions that touch the contract first:
    ~~fallback tempo~~ (done, verified), ~~`Paletteindex` overlap~~ (done: the
    runtime owns it, verified), ~~`toneAmount` semantics~~ (done: centred mood
-   lanes, verified), the 1080p licence question.
+   lanes, verified), ~~the 1080p licence question~~ (done: the contract is
+   resolution-independent, verified). **All four decisions are settled; the
+   freeze itself is next.**
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
@@ -750,6 +752,42 @@ set to 0.8): `toneAmount 0.5` → `mood_warmth 0.65`, `mood_softness 0.35`;
 has `toneAmount 1`, test tone 0.5 and live mode restored. (Test mode's tone is
 exactly 0.5, so the change is invisible there unless tone is moved first.)
 
+**The contract is resolution-independent** (2026-11-06, Block 8 decision 4 of
+4). The TouchDesigner Non-Commercial licence caps images at 1280×1280 (a
+1920×1080 request renders at 1280×720), while the docs assumed 1080p and
+§15.4 required "output resolution matches the stack". Chosen: the contract
+names no resolution. The runtime chooses the output size (later per show or
+projector); modules render at whatever they are given, size everything as a
+fraction of the frame and read their real working size from their image; the
+admission check compares against what the stack actually renders. New spec
+§6.4 says so, and §9, §14, §15.3 and §15.4 point at it. Every existing module
+was already built this way.
+
+Enforced, not just stated: quarantine now renders each module in a fixed busy
+state (`PROBE_STATE`, after Reset and one hit) at the stack size and again at
+640×360 — a smaller request for base scenes, a smaller input image for the
+other slots — and requires `second resolution` to be exactly 640×360 and
+`resolution independent` (mean change across a 32×18 block grid) under 0.05.
+Tested outside TD: frame-fraction stripes and orbs score 0.000, fixed-pixel
+ones 0.076 and 0.350, so a pixel-sized module fails. Also, an approval no
+longer survives a later failed validation of the same version: `IsApproved`
+and `LoadApproved` refuse it and the library shows `blocked (fails now)`.
+
+**Verified in TouchDesigner** (2026-11-06): every module renders exactly
+640×360 at the second size and passes `resolution independent` — mean block
+change kinetic_stripes 0.004 (peak 0.043), clean_lockup 0.000 (peak 0.033,
+text), orb_burst, projector_safe and stub 0.000. All four first-party modules
+still pass, so their approvals stand. One gap: the check does not prove the
+probe frame actually had content (orb_burst's 0.000 peak is consistent with
+soft, fraction-sized orbs, and its hit stage in the same run spawned orbs at
+0.714, but the probe itself is not compared with idle). Adding "probe differs
+from idle" would close it.
+
+**Separate business decision for the owner, not part of the contract:**
+TouchDesigner Non-Commercial is for non-commercial use, so paid DJ shows
+likely need a Commercial licence — which also lifts the resolution cap.
+Every DJ running DeckGlow would need a suitable licence too.
+
 ## Open decisions and known gaps
 
 - **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
@@ -777,12 +815,9 @@ exactly 0.5, so the change is invisible there unless tone is moved first.)
   multiplier, `resmult`, literal values, forced cooks and the viewer flag were
   all checked and are all correct.
 
-  **Product implication worth raising with the owner.** The projector target in
-  the architecture docs is 1080p, and [SCENE_MODULE_SPEC.md §15.4](docs/SCENE_MODULE_SPEC.md)
-  makes "output resolution matches the stack" a live admission check. Neither
-  is achievable on Non-Commercial. Shipping at 1080p needs a Commercial or Pro
-  licence. Until then, develop against 1280×720 and treat the resolution check
-  as informational rather than a gate.
+  Resolved for the contract by Block 8 decision 4 (resolution independence,
+  see *Decisions made*); the licence itself remains the owner's business
+  decision.
 - **Scripts hardcode absolute paths** containing a username. Fine on one
   machine; derive from `project.folder` when a second machine appears.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.

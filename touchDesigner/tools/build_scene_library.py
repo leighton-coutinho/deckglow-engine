@@ -204,9 +204,11 @@ def Scan(quiet=False):
         static[folder] = d
         prev = _load_report(folder)
         q = prev.get('result', '') if prev and prev.get('version') == d['version'] else ''
+        state = _approval_state(appr, d['id'], d['version'])
+        if state == 'yes' and q == 'fail':
+            state = 'blocked (fails now)'
         t.appendRow([d['id'] or '', folder, d['type'] or '', d['version'] or '',
-                     d['displayName'] or '', d['status'], q or 'not run',
-                     _approval_state(appr, d['id'], d['version'])])
+                     d['displayName'] or '', d['status'], q or 'not run', state])
     parent().store('static', static)
     if not quiet:
         Summary()
@@ -450,6 +452,76 @@ def _interface(m, mtype, manifest, rec):
             rec('interface', 'undeclared controls', False, ', '.join(undeclared), warn=True)
 
 
+# A fixed, busy motion state used to compare one module at two resolutions.
+PROBE_STATE = dict(body_level=0.5, body_drift=0.5, impact_fast=1.0, impact_wide=1.0,
+                   sync_phase=0.25, sync_sine=1.0, sync_triangle=0.5, sync_level=0.6,
+                   sync_bar_env=0.8, texture_level=0.5, texture_jitter=0.5,
+                   mood_warmth=0.7, mood_softness=0.3, brand_pulse=0.2)
+SECOND_RES = (640, 360)
+RES_TOLERANCE = 0.05     # mean change per 32x18 block, 0..1
+
+
+def _grid(a, gw=32, gh=18):
+    """Block-average a frame to gw x gh so two resolutions can be compared."""
+    h, w = a.shape[0] - a.shape[0] %% gh, a.shape[1] - a.shape[1] %% gw
+    a = a[:h, :w, :3]
+    return a.reshape(gh, h // gh, gw, w // gw, 3).mean(axis=(1, 3))
+
+
+def _probe(m, out):
+    """Reset, one hit into PROBE_STATE, then read the whole frame 4 frames on.
+    Seeded modules replay the same content, so only resolution differs."""
+    _set()
+    m.par.Reset.pulse()
+    yield 3
+    _set(impact_trigger=1.0, **PROBE_STATE)
+    yield 1
+    _set(**PROBE_STATE)
+    yield 4
+    a = out.numpyArray()
+    _job['probe'] = None if a is None else np.array(a, dtype='float32')
+
+
+def _resolution(m, mtype, rec):
+    """Resolution independence (Block 8 decision 4): render the same state at
+    the stack resolution and at SECOND_RES, and require the same picture.
+    Base scenes get a smaller request; other slots a smaller input image."""
+    q = _q()
+    out = m.op('out1')
+    img = q.op('syn_image')
+    base = mtype == 'base_scene'
+
+    for wait in _probe(m, out):
+        yield wait
+    hi, hi_res = _job.pop('probe', None), (out.width, out.height)
+
+    if base:
+        m.par.Outputwidth, m.par.Outputheight = SECOND_RES
+    else:
+        img.par.resolutionw, img.par.resolutionh = SECOND_RES
+    yield 3
+    for wait in _probe(m, out):
+        yield wait
+    lo, lo_res = _job.pop('probe', None), (out.width, out.height)
+
+    rec('runtime', 'second resolution', lo_res == SECOND_RES,
+        '%%dx%%d for a %%dx%%d %%s' %% (lo_res + SECOND_RES + ('request' if base else 'input',)))
+    if hi is None or lo is None or not _finite(lo):
+        rec('runtime', 'resolution independent', False, 'no valid frame at one of the sizes')
+    else:
+        d = np.abs(_grid(hi) - _grid(lo))
+        rec('runtime', 'resolution independent', float(d.mean()) < RES_TOLERANCE,
+            'mean block change %%.3f, peak %%.3f between %%dx%%d and %%dx%%d'
+            %% (float(d.mean()), float(d.max()), hi_res[0], hi_res[1], lo_res[0], lo_res[1]))
+
+    if base:
+        m.par.Outputwidth, m.par.Outputheight = 1920, 1080
+    else:
+        img.par.resolutionw, img.par.resolutionh = 1920, 1080
+    _set()
+    yield 3
+
+
 def _runtime(m, mtype, rec, perf):
     q = _q()
     out = m.op('out1')
@@ -644,6 +716,8 @@ def _run(folder):
     else:
         for wait in _runtime(m, mtype, rec, report['performance']):
             yield wait
+        for wait in _resolution(m, mtype, rec):
+            yield wait
 
     _unload()
     yield 1
@@ -736,7 +810,11 @@ def IsApproved(key):
     folder = _folder_for(key)
     static = parent().fetch('static', {}).get(folder or '') or {}
     a = _approvals().get(static.get('id'))
-    return bool(a) and a.get('version') == static.get('version') and static.get('status') != 'fail'
+    if not (a and a.get('version') == static.get('version') and static.get('status') != 'fail'):
+        return False
+    # an approval does not survive a later failed validation of the same version
+    rep = _load_report(folder) if folder else None
+    return not (rep and rep.get('version') == static.get('version') and rep.get('result') == 'fail')
 
 
 def LoadApproved(host, key):
