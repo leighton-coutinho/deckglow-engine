@@ -93,6 +93,35 @@ o = ROOT.op('PALETTE')
 if o is not None:
     o.destroy()
 
+# Palettes shipped in installed creator packs (PACK_FORMAT_SPEC s4) join the
+# library under '<pack id>/<name>'. They were checked when the pack was
+# installed; anything unreadable here is skipped. The runtime still chooses.
+import json
+import os
+packs_dir = os.path.join(project.folder, 'Packs')
+have = {r[0] for r in rows}
+added = []
+if os.path.isdir(packs_dir):
+    for pid in sorted(os.listdir(packs_dir)):
+        try:
+            with open(os.path.join(packs_dir, pid, 'pack.json'), 'r', encoding='utf-8') as f:
+                pal_paths = json.load(f).get('palettes', [])
+        except (OSError, ValueError):
+            continue
+        for rel in pal_paths:
+            try:
+                with open(os.path.join(packs_dir, pid, *rel.split('/')), 'r', encoding='utf-8') as f:
+                    pal = json.load(f)
+                name = '%s/%s' % (pid, pal['name'])
+                row = [name] + [','.join('%.4f' % float(c) for c in pal[k][:3])
+                                for k in ('background', 'primary', 'secondary', 'accent')]
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            if name not in have:
+                rows.append(row)
+                have.add(name)
+                added.append(name)
+
 src = ROOT.create(baseCOMP, 'palette_source')
 src.nodeX, src.nodeY = 4800, -1800
 src.nodeWidth, src.nodeHeight = 900, 300
@@ -147,4 +176,5 @@ name = logic.module.Apply()
 print('palette source built: %s -> %s' % (src.path, term.path))
 print('  library  :', ', '.join('%d %s' % (i, lib[i + 1, 'name'].val) for i in range(lib.numRows - 1)))
 print('  selected : %d (%s)' % (src.par.Paletteindex.eval(), name))
+print('  from packs:', ', '.join(added) if added else 'none new')
 print('next: run build_module_host.py so module_host and hit_host get PALETTE')

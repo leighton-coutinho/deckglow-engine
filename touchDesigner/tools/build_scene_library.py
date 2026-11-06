@@ -129,7 +129,7 @@ RESERVED = {'in0_image': 'TOP', 'in0_motion': 'CHOP', 'in1_motion': 'CHOP',
 STYLE = {'float': ('Float',), 'integer': ('Int',), 'toggle': ('Toggle',),
          'menu': ('Menu', 'StrMenu'), 'color': ('RGB', 'RGBA')}
 
-COLS = ['id', 'folder', 'type', 'version', 'displayName', 'static', 'quarantine', 'approved']
+COLS = ['id', 'folder', 'type', 'version', 'displayName', 'static', 'quarantine', 'approved', 'source']
 
 STABLE = 0.02            # max per-pixel change for "the same frame"
 PASS_THROUGH = 2.0 / 255 # max per-pixel change for an exact pass-through
@@ -144,6 +144,7 @@ _job = {'gen': None, 'report': None}
 def Paths():
     root = project.folder
     return {'modules': os.path.join(root, 'modules'),
+            'packs': os.path.join(root, 'Packs'),       # installed creator packs
             'reports': os.path.join(root, 'validation'),
             'approved': os.path.join(root, 'library', 'approved.json')}
 
@@ -178,7 +179,8 @@ def _approval_state(appr, mid, version):
 
 
 def _report_path(folder):
-    return os.path.join(Paths()['reports'], folder + '.json')
+    # pack modules are keyed '<pack id>/<folder>'; keep one flat reports dir
+    return os.path.join(Paths()['reports'], folder.replace('/', '__') + '.json')
 
 
 def _load_report(folder):
@@ -191,8 +193,11 @@ def _load_report(folder):
 
 # ------------------------------------------------------------- discovery
 def Scan(quiet=False):
-    """Discover modules and run the static checks (s15.1)."""
-    reps = _static().discover(Paths()['modules'], _toeexpand())
+    """Discover first-party modules and installed creator packs, and run
+    the static checks (s15.1; creator rules for packs, PACK_FORMAT_SPEC s6).
+    First-party modules are keyed by folder, pack modules by
+    '<pack id>/<folder>', so names cannot collide."""
+    reps = _static().discover(Paths()['modules'], _toeexpand(), packs_root=Paths()['packs'])
     appr = _approvals()
     t = parent().op('LIBRARY')
     t.clear()
@@ -201,6 +206,8 @@ def Scan(quiet=False):
     for r in reps:
         d = r.as_dict()
         folder = os.path.basename(r.folder)
+        if r.source and r.source != 'first-party':
+            folder = '%%s/%%s' %% (r.source, folder)
         static[folder] = d
         prev = _load_report(folder)
         q = prev.get('result', '') if prev and prev.get('version') == d['version'] else ''
@@ -208,7 +215,8 @@ def Scan(quiet=False):
         if state == 'yes' and q == 'fail':
             state = 'blocked (fails now)'
         t.appendRow([d['id'] or '', folder, d['type'] or '', d['version'] or '',
-                     d['displayName'] or '', d['status'], q or 'not run', state])
+                     d['displayName'] or '', d['status'], q or 'not run', state,
+                     d.get('source') or 'first-party'])
     parent().store('static', static)
     if not quiet:
         Summary()
@@ -222,11 +230,11 @@ def Scan(quiet=False):
 
 def Summary():
     t = parent().op('LIBRARY')
-    print('%%-30s %%-15s %%-14s %%-8s %%-7s %%-10s %%s' %% (
-        'id', 'folder', 'type', 'version', 'static', 'quarantine', 'approved'))
+    cols = ('id', 'folder', 'type', 'version', 'static', 'quarantine', 'approved', 'source')
+    fmt = '%%-34s %%-26s %%-14s %%-8s %%-7s %%-10s %%-20s %%s'
+    print(fmt %% cols)
     for r in range(1, t.numRows):
-        print('%%-30s %%-15s %%-14s %%-8s %%-7s %%-10s %%s' %% tuple(
-            t[r, c].val for c in ('id', 'folder', 'type', 'version', 'static', 'quarantine', 'approved')))
+        print(fmt %% tuple(t[r, c].val for c in cols))
 
 
 def _folder_for(key):
@@ -351,8 +359,14 @@ def _unload():
         m.destroy()
 
 
+def _module_dir(folder):
+    """Where a library key's module really lives (first-party or a pack)."""
+    d = (parent().fetch('static', {}).get(folder) or {}).get('folder')
+    return d or os.path.join(Paths()['modules'], folder)
+
+
 def _manifest(folder):
-    with open(os.path.join(Paths()['modules'], folder, 'module.json'), 'r', encoding='utf-8') as f:
+    with open(os.path.join(_module_dir(folder), 'module.json'), 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -702,7 +716,7 @@ def _run(folder):
     before = _outside()
     m = q.create(baseCOMP, 'module')
     m.nodeX, m.nodeY = 900, 0
-    entry = os.path.join(Paths()['modules'], folder, manifest['entry'])
+    entry = os.path.join(_module_dir(folder), manifest['entry'])
     m.par.externaltox = entry
     m.par.enableexternaltox = True
     m.par.enableexternaltoxpulse.pulse()
@@ -844,7 +858,7 @@ def LoadApproved(host, key):
     if h is None:
         print('no host %%s' %% host)
         return False
-    h.par.Modulepath = os.path.join(Paths()['modules'], folder, manifest['entry']).replace('\\', '/')
+    h.par.Modulepath = os.path.join(_module_dir(folder), manifest['entry']).replace('\\', '/')
     h.par.Moduletype = static['type']
     h.par.Load.pulse()
     print('loading %%s into %%s' %% (static['id'], host))

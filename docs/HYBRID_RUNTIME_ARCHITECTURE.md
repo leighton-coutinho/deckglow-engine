@@ -622,19 +622,22 @@ This is the main reason to choose the hybrid-first architecture:
 - the runtime is fixed
 - creator packs are content, not alternate runtimes
 
-Future pack discovery model:
+Pack layout, as specified in [PACK_FORMAT_SPEC.md](PACK_FORMAT_SPEC.md)
+(`deckglow.pack/1`): a pack ships as one `.dgpack` file and installs to
 
 ```text
 Packs/
-  creator_pack_name/
-    pack.json
-    scenes/
-    hit_fx/
-    brand_fx/
-    finish_fx/
+  <pack id>/
+    pack.json        id, version, module list, sha256 of every file
+    modules/
+      <folder>/      one self-contained module each (any slot type)
     palettes/
-    assets/
+      <name>.json
+    installed.json   written by the installer
 ```
+
+Slot type comes from each module's manifest, so there are no per-slot
+folders, and assets live inside each module rather than at pack level.
 
 The runtime can adopt pack installation later without changing:
 

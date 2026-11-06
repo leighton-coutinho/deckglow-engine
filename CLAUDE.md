@@ -394,6 +394,64 @@ stub mean 0.418) and still passes `resolution independent`. orb_burst's
 exactly — not an empty frame. All four first-party modules pass; stub warns
 only for black at idle. `check_contract.py`: 85 checks, 0 problems.
 
+**Creator packs — `deckglow.pack/1`: done and verified** (2026-11-06).
+
+Verified end to end: the example pack installed (14 checks); in TouchDesigner
+the palette source picked up `com.example.demo/sunset`, the library listed
+`com.example.demo.flat_wash` with source `com.example.demo`, quarantine
+passed it with a warning only for black at idle (as for the stub it is copied
+from: no Python — 8 operators, 5 expressions allowed — no absolute paths,
+probe has content, resolution independent, isolation), the owner approved it
+and `LoadApproved` put it in `module_host` — a flat wash under the orbs and
+lockup, no stripes. kinetic_stripes was loaded back and the `.toe` saved in
+live mode. `library/approved.json` now also lists the example module; its
+pack lives in the gitignored `Packs/`, so on a fresh checkout that approval
+simply matches nothing until the pack is installed. Spec: [docs/PACK_FORMAT_SPEC.md](docs/PACK_FORMAT_SPEC.md).
+
+Owner's decisions: **anyone can publish**, checked locally (quarantine plus
+per-version approval, as for first-party; content hashes; a `signature`
+field reserved for a future curated tier); **no Python in creator modules**;
+**one `.dgpack` file** (a zip) installed into `touchDesigner/Packs/<pack id>/`
+(gitignored — per-machine state).
+
+- `pack.json`: schema, id (never under `com.deckglow`), version, runtimeApi,
+  moduleContract, `modules` (folder, id, version — ids must start with the
+  pack id), optional `palettes`, `files` (sha256 of every file), `signature`
+  null.
+- **No Python** is enforced on the `.tox` itself, expanded with toeexpand
+  (`validate_static.py`, `policy='creator'`): no script / Execute / Timer /
+  network / file-out / Window / Engine / Replicator operators, no `callbacks`
+  or `externaltox` set, and every *active* expression must be a pure read
+  (AST allowlist: `op`, `parent`, `me`, `math`, `absTime` and a few builtins;
+  no `_` attributes or mutators like `module`, `run`, `destroy`). In `.parm`
+  lines flag bit `0x1` is an active expression and `0x200` a bind; flag `16`
+  alone is an expression stored but switched off (Movie File In's default
+  `app.samplesFolder+'/Map/Banana.tif'`) and is skipped. Applied to the
+  first-party modules as a check of the rule: kinetic_stripes,
+  projector_safe and stub pass; orb_burst and clean_lockup (Python, exempt)
+  are caught.
+- `tools/pack_tool.py` — `build`, `verify`, `install [--force]`, `remove`,
+  `list`. Verify checks archive safety (zip-slip, absolute paths, symlinks,
+  encryption, duplicates, sizes), every `pack.json` rule, hashes, then each
+  module with the static and creator checks. Install stages, then swaps in one
+  step; a failing install leaves the old one untouched; same/lower version is
+  refused unless forced. Installing approves nothing.
+- The scene library discovers `Packs/` alongside `modules/`: pack modules are
+  keyed `<pack id>/<folder>`, show their pack in a new `source` column, and
+  reports are saved as `<pack id>__<folder>.json`. `build_palette_source.py`
+  adds pack palettes to the library as `<pack id>/<name>`.
+- Example: `touchDesigner/examples/packs/com.example.demo/` (the stub, renamed
+  `com.example.demo.flat_wash`, plus a `sunset` palette) and its built
+  `com.example.demo-1.0.0.dgpack`.
+
+Tested outside TD: nine bad packs refused at build (reserved id, schema, API,
+signature, namespace, version mismatch, unlisted module, stray file, bad
+palette) plus a Python module; six hostile archives refused at verify
+(tampered `.tox`, extra file, duplicate name, `../`, `C:/`, symlink, not a
+zip); install, refused reinstall, upgrade, refused downgrade and `--force`,
+untouched-on-failure, list, remove; library discovery, approval and
+`LoadApproved` from `Packs/`.
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -419,6 +477,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
 | `build_tempo_fallback.py` | Adds `tempo_bpm` to `engine_in` and replaces the fixed 120 BPM fallback with `phase_keeper` (last usable tempo, no phase jump). Idempotent; keeps `test_bpm`. |
 | `diagnose_tempo_fallback.py` | Read-only. Prints the keeper's mode and held tempo, then measures `sync_phase` speed over 1 s and reports PASS if it matches. |
+| `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. |
 | `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |
 | `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |
 | `build_scene_library.py` | Builds `/project1/scene_library`: discovery, quarantine (§15.2–15.4), JSON reports in `validation/`, per-version approvals in `library/approved.json`, and the gated `LoadApproved`. |
@@ -578,9 +637,8 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
    lanes, verified), ~~the 1080p licence question~~ (done: the contract is
    resolution-independent, verified).
 
-All eight blocks of SCENE_MODULE_SPEC §18 are complete. Next, per §18, the
-creator pack format — designed now that four reference modules pass the same
-validator.
+All eight blocks of SCENE_MODULE_SPEC §18 are complete. The creator pack
+format (`deckglow.pack/1`) is built — see *Current state*.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).

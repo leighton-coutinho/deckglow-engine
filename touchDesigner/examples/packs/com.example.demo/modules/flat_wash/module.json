@@ -1,0 +1,16 @@
+{
+  "schema": "deckglow.scene-module/1",
+  "id": "com.example.demo.flat_wash",
+  "type": "base_scene",
+  "displayName": "Flat Wash",
+  "author": "Example Studio",
+  "version": "1.0.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "entry": "module.tox",
+  "thumbnail": "thumbnail.png",
+  "performanceTier": "light",
+  "tags": ["example", "flat"],
+  "controls": [],
+  "description": "Example creator module: a flat colour wash driven by body_level, sync_phase and texture_level. Built without Python, so it passes the creator rules.",
+  "capabilities": {"usesPython": false, "usesAudioFileIn": false, "supportsAlphaAssets": false}
+}

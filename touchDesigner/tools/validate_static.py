@@ -54,6 +54,7 @@ class Report(object):
         self.folder = folder
         self.checks = []
         self.manifest = None
+        self.source = None
 
     def add(self, check, status, detail=''):
         self.checks.append({'check': check, 'status': status, 'detail': detail})
@@ -76,7 +77,7 @@ class Report(object):
         m = self.manifest or {}
         return {'folder': self.folder, 'id': m.get('id'), 'type': m.get('type'),
                 'version': m.get('version'), 'displayName': m.get('displayName'),
-                'status': self.status, 'checks': self.checks}
+                'source': self.source, 'status': self.status, 'checks': self.checks}
 
 
 def _semver(text):
@@ -118,10 +119,17 @@ def png_size(path):
     return struct.unpack('>II', head[16:24])
 
 
-def scan_tox(tox, toeexpand=None):
-    """Absolute paths baked into a .tox. Returns (hits, note): hits is a list
-    when the scan ran, 'unreadable' when toeexpand could not read the file,
-    None when the scan could not run at all (no toeexpand)."""
+def inspect_tox(tox, toeexpand=None):
+    """Expand a .tox with toeexpand and collect what the checks need.
+
+    Returns (info, note). info is a dict when the scan ran:
+      paths     absolute paths found in text files ('rel: path')
+      ops       (rel, 'FAMILY:type') for every operator
+      exprs     (rel, parameter, expression text) for every expression
+      pars      (rel, parameter, value) for callbacks / externaltox
+      bad       (rel, line) parameter lines that could not be parsed
+    'unreadable' when toeexpand could not read the file; None when the scan
+    could not run at all (no toeexpand)."""
     exe = toeexpand or DEFAULT_TOEEXPAND
     if not os.path.isfile(exe):
         return None, 'toeexpand not found'
@@ -135,18 +143,160 @@ def scan_tox(tox, toeexpand=None):
         if not os.path.isdir(expanded):
             said = (res.stdout + res.stderr).decode('utf-8', 'replace').strip().replace('\n', ' ')
             return 'unreadable', said or 'no output'
-        hits = []
+        info = {'paths': [], 'ops': [], 'exprs': [], 'pars': [], 'bad': []}
         for dirpath, _, files in os.walk(expanded):
             for fn in files:
                 if fn.endswith(('.data', '.chop', '.ts', '.oldacbo')):
                     continue                        # binary payloads
-                with open(os.path.join(dirpath, fn), 'rb') as f:
-                    for m in ABS_PATH_RE.finditer(f.read()):
-                        rel = os.path.relpath(os.path.join(dirpath, fn), expanded)
-                        hits.append('%s: %s' % (rel, m.group(0).decode('utf-8', 'replace')[:80]))
-        return hits, ''
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, expanded)
+                with open(full, 'rb') as f:
+                    raw = f.read()
+                for m in ABS_PATH_RE.finditer(raw):
+                    info['paths'].append('%s: %s' % (rel, m.group(0).decode('utf-8', 'replace')[:80]))
+                text = raw.decode('utf-8', 'replace')
+                if fn.endswith('.n') or re.search(r'\.n\.\d+$', fn):
+                    first = text.split('\n', 1)[0].strip()
+                    if ':' in first:
+                        info['ops'].append((rel, first))
+                elif fn.endswith('.parm'):
+                    _collect_parms(rel, text, info)
+        return info, ''
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+PARM_HEAD_RE = re.compile(r'^(\S+)\s+(-?\d+)\s*')
+EXPR_ACTIVE = 0x001      # expression mode (flags 17, 49)
+EXPR_BIND = 0x200        # bind mode (flags 512) - also evaluated
+# flag 0x010 alone (16) is an expression stored but switched off - e.g. a
+# Movie File In's default "app.samplesFolder+'/Map/Banana.tif'". Only Python
+# could switch it on, and creator modules have none, so it is not checked.
+
+
+def _unquote(s):
+    import ast
+    try:
+        v = ast.literal_eval(s)
+        return v if isinstance(v, str) else s[1:-1]
+    except (ValueError, SyntaxError):
+        return s[1:-1]
+
+
+def _take_token(rest):
+    """Split one value off the front: a "quoted string" or a bare word."""
+    if rest.startswith('"'):
+        i, esc = 1, False
+        while i < len(rest):
+            ch = rest[i]
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                return _unquote(rest[:i + 1]), rest[i + 1:].lstrip()
+            i += 1
+        return None, ''                       # unterminated quote
+    parts = rest.split(None, 1)
+    return (parts[0] if parts else ''), (parts[1] if len(parts) > 1 else '')
+
+
+def _collect_parms(rel, text, info):
+    """Parameter lines sit between two '?' lines: name flags value [expr].
+    The expression is kept exactly as stored (quoted ones are unquoted)."""
+    inside = False
+    for line in text.splitlines():
+        if line.strip() == '?':
+            inside = not inside
+            continue
+        if not inside or not line.strip():
+            continue
+        head = PARM_HEAD_RE.match(line)
+        if not head:
+            info['bad'].append((rel, line[:120]))
+            continue
+        name, flags = head.group(1), int(head.group(2))
+        value, rest = _take_token(line[head.end():])
+        if value is None:
+            info['bad'].append((rel, line[:120]))
+            continue
+        expr = rest.strip()
+        if expr and (flags & EXPR_ACTIVE or flags & EXPR_BIND):
+            if expr.startswith('"') and expr.endswith('"') and len(expr) >= 2:
+                expr = _unquote(expr)
+            info['exprs'].append((rel, name, expr))
+        if name in ('callbacks', 'externaltox') and value.strip():
+            info['pars'].append((rel, name, value))
+
+
+def scan_tox(tox, toeexpand=None):
+    """Absolute paths baked into a .tox. Returns (hits, note): hits is a list
+    when the scan ran, 'unreadable' when toeexpand could not read the file,
+    None when the scan could not run at all (no toeexpand)."""
+    info, note = inspect_tox(tox, toeexpand)
+    if not isinstance(info, dict):
+        return info, note
+    return info['paths'], ''
+
+
+# --------------------------------------------- creator rules (no Python)
+# PACK_FORMAT_SPEC s6. First-party modules are exempt.
+FORBIDDEN_OP_PARTS = (
+    'script', 'exec', 'timer',                                  # run code
+    'osc', 'tcp', 'udp', 'web', 'serial', 'mqtt', 'socket', 'http',
+    'midi', 'dmx', 'artnet', 'ndi', 'spout', 'syphon', 'touchin', 'touchout',
+    'sharedmem', 'pipe', 'fileout', 'folder',                   # reach outside
+    'window', 'engine', 'replicator',
+)
+EXPR_NAMES = {'op', 'parent', 'me', 'math', 'absTime', 'abs', 'min', 'max', 'round',
+              'int', 'float', 'bool', 'len', 'str', 'pow', 'True', 'False', 'None'}
+EXPR_DENIED_ATTRS = {'run', 'save', 'destroy', 'create', 'copy', 'copyOPs', 'store',
+                     'unstore', 'storage', 'module', 'text', 'write', 'cook', 'pulse',
+                     'connect', 'disconnect', 'lock', 'appendRow', 'insertRow',
+                     'replaceRow', 'deleteRow', 'clear', 'setSize'}
+
+
+def check_expression(text):
+    """None if text is a pure-read expression, else the reason it is not."""
+    import ast
+    try:
+        tree = ast.parse(text, mode='eval')
+    except SyntaxError:
+        return 'not a single Python expression'
+    allowed = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.IfExp,
+               ast.Call, ast.Attribute, ast.Name, ast.Load, ast.Constant, ast.Subscript,
+               ast.Slice, ast.Tuple, ast.List, ast.keyword, ast.operator, ast.unaryop,
+               ast.boolop, ast.cmpop, ast.expr_context)
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed):
+            return '%s is not allowed' % type(node).__name__
+        if isinstance(node, ast.Name) and node.id not in EXPR_NAMES:
+            return 'name %r is not allowed' % node.id
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith('_'):
+                return 'attribute %r is not allowed' % node.attr
+            if node.attr in EXPR_DENIED_ATTRS:
+                return 'attribute %r changes or runs things' % node.attr
+    return None
+
+
+def creator_findings(info):
+    """Problems that stop a creator module (PACK_FORMAT_SPEC s6)."""
+    out = []
+    for rel, optype in info['ops']:
+        kind = optype.split(':', 1)[1].lower()
+        hit = next((p for p in FORBIDDEN_OP_PARTS if p in kind), None)
+        if hit:
+            out.append('%s is a %s operator (%s)' % (rel.rsplit('.', 1)[0], optype, hit))
+    for rel, name, value in info['pars']:
+        out.append('%s sets %s = %r' % (rel.rsplit('.', 1)[0], name, value[:60]))
+    for rel, name, expr in info['exprs']:
+        why = check_expression(expr)
+        if why:
+            out.append('%s %s: %s in %r' % (rel.rsplit('.', 1)[0], name, why, expr[:70]))
+    for rel, line in info['bad']:
+        out.append('%s: unreadable parameter line %r' % (rel, line[:60]))
+    return out
 
 
 # ------------------------------------------------------------ the checks
@@ -199,8 +349,9 @@ def _check_controls(r, controls):
         r.ok('controls', '%d declared' % len(controls))
 
 
-def validate_dir(folder, toeexpand=None, scan=True):
-    """Static checks for one module directory. Returns a Report."""
+def validate_dir(folder, toeexpand=None, scan=True, policy='first_party'):
+    """Static checks for one module directory. Returns a Report.
+    policy 'creator' adds the creator-pack rules (PACK_FORMAT_SPEC s6)."""
     r = Report(folder)
     mpath = os.path.join(folder, 'module.json')
     if not os.path.isfile(mpath):
@@ -276,17 +427,29 @@ def validate_dir(folder, toeexpand=None, scan=True):
         r.fail('entry', '%s is not a .tox' % m.get('entry'))
     else:
         r.ok('entry', m.get('entry'))
-        if scan:
-            hits, note = scan_tox(entry, toeexpand)
-            if hits is None:
-                r.warn('tox paths', 'not scanned: ' + note)
-            elif hits == 'unreadable':
+        if scan or policy == 'creator':
+            info, note = inspect_tox(entry, toeexpand)
+            if info is None:
+                # creator modules cannot be admitted without inspecting the .tox
+                (r.fail if policy == 'creator' else r.warn)('tox paths', 'not scanned: ' + note)
+            elif info == 'unreadable':
                 r.fail('entry', 'TouchDesigner cannot read the .tox: ' + note)
-            elif hits:
-                for h in hits[:5]:
-                    r.fail('tox paths', 'absolute path baked in - ' + h)
             else:
-                r.ok('tox paths', 'no absolute paths')
+                if info['paths']:
+                    for h in info['paths'][:5]:
+                        r.fail('tox paths', 'absolute path baked in - ' + h)
+                else:
+                    r.ok('tox paths', 'no absolute paths')
+                if policy == 'creator':
+                    found = creator_findings(info)
+                    for f in found[:8]:
+                        r.fail('no python', f)
+                    if not found:
+                        r.ok('no python', '%d operators, %d expressions, all allowed'
+                             % (len(info['ops']), len(info['exprs'])))
+
+    if policy == 'creator' and (m.get('capabilities') or {}).get('usesPython'):
+        r.fail('no python', 'capabilities.usesPython is true; creator modules may not use Python')
 
     thumb = _inside(folder, m.get('thumbnail'))
     if thumb is None:
@@ -308,13 +471,29 @@ def validate_dir(folder, toeexpand=None, scan=True):
     return r
 
 
-def discover(modules_root, toeexpand=None, scan=True):
-    """Validate every directory under modules_root that has a module.json."""
+def discover(modules_root, toeexpand=None, scan=True, packs_root=None):
+    """Validate every first-party module under modules_root and, when
+    packs_root is given, every module of every installed pack under it
+    (packs_root/<pack id>/modules/<folder>) with the creator rules. Each
+    report gets .source: 'first-party' or the pack id."""
     reports = []
     for name in sorted(os.listdir(modules_root)):
         folder = os.path.join(modules_root, name)
         if os.path.isdir(folder) and os.path.isfile(os.path.join(folder, 'module.json')):
-            reports.append(validate_dir(folder, toeexpand, scan))
+            r = validate_dir(folder, toeexpand, scan)
+            r.source = 'first-party'
+            reports.append(r)
+    if packs_root and os.path.isdir(packs_root):
+        for pack in sorted(os.listdir(packs_root)):
+            mods = os.path.join(packs_root, pack, 'modules')
+            if not os.path.isdir(mods):
+                continue
+            for name in sorted(os.listdir(mods)):
+                folder = os.path.join(mods, name)
+                if os.path.isfile(os.path.join(folder, 'module.json')):
+                    r = validate_dir(folder, toeexpand, scan, policy='creator')
+                    r.source = pack
+                    reports.append(r)
     ids = {}
     for r in reports:
         mid = (r.manifest or {}).get('id')

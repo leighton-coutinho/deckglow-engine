@@ -1,0 +1,27 @@
+{
+  "schema": "deckglow.pack/1",
+  "id": "com.example.demo",
+  "displayName": "Example Demo Pack",
+  "author": "Example Studio",
+  "version": "1.0.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "moduleContract": "deckglow.scene-module/1",
+  "modules": [
+    {
+      "folder": "flat_wash",
+      "id": "com.example.demo.flat_wash",
+      "version": "1.0.0"
+    }
+  ],
+  "palettes": [
+    "palettes/sunset.json"
+  ],
+  "files": {
+    "modules/flat_wash/module.json": "sha256:21d8b62ebd5365326853e9b3f27f26f98dcaa10e4fca270bfc04fc73c98747c8",
+    "modules/flat_wash/module.tox": "sha256:9e657d0d300d0c473aa55b53b085959ff8a0329e236abc26077dd15a1b0600ef",
+    "modules/flat_wash/thumbnail.png": "sha256:f3a9f7912377a86e52e6ad1e83a2533b721302b47e66dea918929464e27a88ff",
+    "palettes/sunset.json": "sha256:04537c139279f8bbab004fed404ca865838a0151d5a4365df7763ab1c8d0fb13"
+  },
+  "signature": null,
+  "description": "A minimal creator pack used to test pack_tool.py and the scene library. Not a real visual."
+}
