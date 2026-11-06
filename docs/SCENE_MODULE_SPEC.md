@@ -268,6 +268,11 @@ blackout_gate
 
 All unipolar lanes use `0..1`. `sync_sine` is bipolar and uses `-1..1`.
 
+`mood_warmth` and `mood_softness` are centred lanes: `0.5` means no mood
+influence. The performer's `toneAmount` fades both toward `0.5`, so a module
+must treat `0.5` as neutral and drive its mood effects by the distance from
+it, not from `0`.
+
 `impact_trigger` is a one-frame, debounced pulse created centrally by the
 motion adapter. Event-spawning modules must use this lane instead of performing
 their own threshold detection on `hit` or `impact_fast`.

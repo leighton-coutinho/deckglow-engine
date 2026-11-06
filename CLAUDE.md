@@ -539,8 +539,8 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
    **In progress.** Settle the open decisions that touch the contract first:
    ~~fallback tempo~~ (done, verified), ~~`Paletteindex` overlap~~ (done: the
-   runtime owns it, verified), `toneAmount` semantics, the 1080p licence
-   question.
+   runtime owns it, verified), ~~`toneAmount` semantics~~ (done: centred mood
+   lanes, verified), the 1080p licence question.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).
@@ -590,10 +590,12 @@ Ten lanes are scaled, as HYBRID_RUNTIME_ARCHITECTURE defines them:
 | `sync_bar_env` | `masterIntensity` |
 | `texture_level` | `textureAmount` × `masterIntensity` |
 | `texture_jitter` | `textureAmount` × `masterIntensity` |
-| `mood_warmth` | `toneAmount` |
 | `brand_pulse` | `brandAmount` × `masterIntensity` |
+| `mood_warmth` | centred: `0.5 + (x − 0.5) × toneAmount` |
+| `mood_softness` | centred: `0.5 + (x − 0.5) × toneAmount` |
 
-The other six pass through. `clamp_lanes` limits every lane to `0..1` except
+The other five pass through. The two mood lanes are Expression CHOPs
+(`scale_mood_*`), not Math multiplies — see decision 3 below. `clamp_lanes` limits every lane to `0..1` except
 `sync_sine`.
 
 `motion_adapter` itself is still the hand-built Block 1 network in the `.toe`;
@@ -731,6 +733,23 @@ the orbs (owner reported all steps fine). The first kinetic re-export failed
 with "Error creating file" on `thumbnail.png`, most likely because another app
 had it open; the builder now reports that case instead of a traceback.
 
+**The mood lanes are centred; `toneAmount` fades them to neutral**
+(2026-11-06, Block 8 decision 3 of 4). Multiplying `mood_warmth` by
+`toneAmount` pinned it at `0` — fully cool — when tone influence was turned
+off, so `projector_safe` tinted the picture blue (tint −0.030 at Warmth 0.3),
+and `mood_softness` ignored the knob entirely. Chosen: both mood lanes scale
+around `0.5`, `0.5 + (x − 0.5) × toneAmount`, so `1` is unchanged and `0` is
+neutral whatever the music does. The new contract rule (spec §7, lane
+meanings): mood lanes are centred and modules treat `0.5` as "no mood".
+`build_performer_controls.py` builds them as Expression CHOPs reading
+`ctl_toneAmount`; the checker expects the centred values. No module changes
+(`projector_safe` already measured warmth from 0.5), so nothing needs
+re-approval. **Verified in TouchDesigner** (2026-11-06, test mode with tone
+set to 0.8): `toneAmount 0.5` → `mood_warmth 0.65`, `mood_softness 0.35`;
+`toneAmount 0` → both `0.5`; all eleven lanes PASS both times. The saved `.toe`
+has `toneAmount 1`, test tone 0.5 and live mode restored. (Test mode's tone is
+exactly 0.5, so the change is invisible there unless tone is moved first.)
+
 ## Open decisions and known gaps
 
 - **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
@@ -741,9 +760,6 @@ had it open; the builder now reports that case instead of a traceback.
 - **`texture_jitter` drifts rather than shimmers.** The spec calls it a
   "higher-frequency" lane, but `noise_tex` has `period 4`, so it wanders slowly.
   Check against what `kinetic_stripes` actually needs in Block 3.
-- **`toneAmount` at `0` pins `mood_warmth` to `0`** (fully cool), not to a
-  neutral `0.5`, and `mood_softness` (`1 - tone`) ignores it. Spec-literal;
-  worth a second look if "less tone influence" should mean "more neutral".
 - **The flash limiter measures the whole-frame average only**, so a flash
   confined to part of the screen (a big orb burst in one corner) is diluted
   and may pass. A 4×4 grid of measurements would catch it. It reduces risk; it

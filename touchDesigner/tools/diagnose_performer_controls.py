@@ -11,7 +11,8 @@ clamp(source * control) computed independently from the source node, so a
 PASS means the multiply really happened. With every control at 1.0 that only
 proves the wiring; set one to 0.5 on performer_controls and run this again.
 masterIntensity at 0.5 should move nine lanes, textureAmount two, and every
-other control one.
+other control one. The mood lanes are centred: toneAmount fades both
+mood_warmth and mood_softness toward 0.5 (neutral), not toward 0.
 """
 
 TOL = 1e-3
@@ -71,8 +72,12 @@ else:
         ('sync_bar_env',  [M],                  A.op('ex_bar'),          0),
         ('texture_level', ['textureAmount', M], ENGINE,                  'density'),
         ('texture_jitter',['textureAmount', M], A.op('mul_jitter'),      0),
-        ('mood_warmth',   ['toneAmount'],       ENGINE,                  'tone'),
         ('brand_pulse',   ['brandAmount', M],   A.op('math_brand'),      0),
+    ]
+    # centred lanes: 0.5 is neutral, so the amount fades toward 0.5
+    centred = [
+        ('mood_warmth',   'toneAmount', ENGINE,           'tone'),
+        ('mood_softness', 'toneAmount', A.op('ex_soft'),  0),
     ]
     controls = ROOT.op('engine_controls')
     for lane, ctls, src, key in checks:
@@ -91,6 +96,19 @@ else:
             print('  %-15s  %.4f  = clamp(%.4f * %s)  %s'
                   % (lane, got, raw, ' * '.join(terms),
                      'PASS' if ok else 'FAIL want %.4f' % want))
+        except Exception as e:
+            fails += 1
+            print('  %-15s  <%s: %s>' % (lane, type(e).__name__, e))
+    for lane, ctl, src, key in centred:
+        try:
+            raw = chan(src, key)
+            amount = chan(controls, ctl)
+            want = min(1.0, max(0.0, 0.5 + (raw - 0.5) * amount))
+            got = chan(OUT, lane)
+            ok = abs(got - want) <= TOL
+            fails += not ok
+            print('  %-15s  %.4f  = 0.5 + (%.4f - 0.5) * %s %.3f  %s'
+                  % (lane, got, raw, ctl, amount, 'PASS' if ok else 'FAIL want %.4f' % want))
         except Exception as e:
             fails += 1
             print('  %-15s  <%s: %s>' % (lane, type(e).__name__, e))

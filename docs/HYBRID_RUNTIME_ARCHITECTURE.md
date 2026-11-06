@@ -265,12 +265,16 @@ blackout_gate
 `mood_warmth`
 
 - slow palette guidance lane
-- derived from `tone * toneAmount`
+- centred: `0.5` is neutral
+- derived from `0.5 + (tone - 0.5) * toneAmount`, so `toneAmount` fades it
+  toward neutral, and at `0` it holds `0.5` whatever the music does
 - use for warm-vs-cool or bright-vs-dark palette selection
 
 `mood_softness`
 
 - complementary finish lane
+- centred: `0.5` is neutral
+- derived from `0.5 + ((1 - tone) - 0.5) * toneAmount`
 - use for blur-vs-sharpen, contrast softness, or edge hardness
 
 `brand_pulse`

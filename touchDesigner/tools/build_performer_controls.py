@@ -63,8 +63,16 @@ SCALED = {
     'sync_bar_env':  ['masterIntensity'],                  # bar accent
     'texture_level': ['textureAmount', 'masterIntensity'], # density
     'texture_jitter':['textureAmount', 'masterIntensity'], # noise * density
-    'mood_warmth':   ['toneAmount'],                       # tone
     'brand_pulse':   ['brandAmount', 'masterIntensity'],   # 0.25 * lag(hit)
+}
+
+# Mood lanes are centred: 0.5 is neutral, so their amount fades them toward
+# 0.5 rather than toward 0 - lane' = 0.5 + (lane - 0.5) * amount. At 0 the
+# look is neutral whatever the music does (Block 8 decision 3; plain
+# multiplying pinned mood_warmth at 0, fully cool, and ignored mood_softness).
+CENTRED = {
+    'mood_warmth':   'toneAmount',                         # tone
+    'mood_softness': 'toneAmount',                         # 1 - tone
 }
 
 # motion_merge input order. Unchanged from Block 1 so channel indices hold.
@@ -168,6 +176,14 @@ for lane, amounts in SCALED.items():
 
     sources[lane] = mul
 
+for lane, amount in CENTRED.items():
+    lane_op = A.op('lane_' + lane)
+    ex = A.create(expressionCHOP, 'scale_' + lane)
+    set_inputs(ex, [lane_op])
+    ex.par.expr0expr.expr = "0.5 + (me.inputVal - 0.5) * op('ctl_%s')[0]" % amount
+    place(ex, 12800, lane_op.nodeY)
+    sources[lane] = ex
+
 merge = A.op('motion_merge')
 place(merge, 14400, -4000, 1400, 600)
 set_inputs(merge, [sources.get(l) or A.op('lane_' + l) for l in LANES])
@@ -195,6 +211,8 @@ print('  controls:', ', '.join('%s=%g' % (n, carried.get(n, 1.0)) for n in CONTR
 print('  carried :', sorted(carried) or 'none (first build)')
 for lane, amounts in SCALED.items():
     print('  scaled  : %-14s * %s' % (lane, ' * '.join(amounts)))
+for lane, amount in CENTRED.items():
+    print('  centred : %-14s 0.5 + (x - 0.5) * %s' % (lane, amount))
 print('  clamp   : type=%s 0..1, scope "%s"' % (clamp.par.type.eval(), clamp.par.scope.eval()))
 print('  checking in 2 frames...')
 
