@@ -59,7 +59,58 @@ Verified live: dynamic load, slot-correct wiring, `Intensity` forwarding into
 the loaded module, bypass, repeatable unload/reload, and all 16 motion lanes
 reaching inside the module with live values.
 
-**Blocks 3–8 remain.** See *Remaining work*.
+**Block 3 — `kinetic_stripes`: done and verified** (2026-11-05).
+
+Verified live: the builder's lookup-image and lock checks passed, `module_host`
+loaded it with `Status` `ok: 1280x720`, it reacts in test mode, and the idle
+frame matches the proto's side by side. The exported `.tox` stores
+`lookup_tex` locked with its image and contains no absolute paths. The saved
+`.toe` now has `module_host` pointing at this module.
+
+`tools/build_kinetic_stripes.py` builds the module in `/project1`, exports
+`modules/kinetic_stripes/module.tox` + `thumbnail.png`, and removes the build
+COMP. `module.json` and `assets/stripe_lookup.png` are checked in.
+
+What was ported, and why only part of the proto. In the saved
+`ReactiveVisualsTouchDesignerProtoOsc.8.toe`, `comp1` and `feedback1` are
+**bypassed** and `level1` is **locked**, so the feedback trails and the
+mid/high-driven noise never reached the screen. The live chain was:
+
+```
+ramp1 (stripes) ─ lookup2 (through the frozen level1 image) ─ level_onset_flash
+  ─ transform2 (bar zoom) ─ xform_kick ─ 3 offset copies composited ─ out1
+```
+
+That is what the module reproduces. The frozen image was recovered from
+`level1.data` with `tools/extract_locked_top.py` and is re-locked inside the
+module, so the `.tox` references no external file. (Earlier notes said the proto
+had a replicator: it is TouchDesigner's stock `/local/maps` MIDI replicator,
+not part of the visual.)
+
+| Proto (raw OSC) | Drives | Lane |
+| --- | --- | --- |
+| `bass` | ramp phase — stripes slide | `body_level` |
+| `onset` | brightness `0.75 + 1.25x` | `impact_fast` |
+| bar pulse → Trigger | zoom `1 + 1.0x` | `sync_bar_env` |
+| `kick` | zoom `1 + 0.12x` | `impact_wide` |
+| sin(beat phase) | x drift `±0.03` | `sync_sine` |
+
+The proto constants are the six creative controls (`Stripeperiod`,
+`Stripeshift`, `Flash`, `Barzoom`, `Kickzoom`, `Beatdrift`). The proto rendered
+at TouchDesigner's default 256×256; the module renders at
+`Outputwidth`×`Outputheight`.
+
+The blue bands in the thumbnail are real, not a bug: Lookup TOP indexes each
+channel separately, so ramp yellow `(1,1,0)` reads the grey noise at two
+different positions and can come out blue.
+
+To re-check after a rebuild: run the builder (it prints the lookup-image check
+and the files it wrote), then in `module_host` set `Modulepath` to
+`project.folder + '/modules/kinetic_stripes/module.tox'`, `Moduletype`
+`base_scene`, pulse `Load` and expect `Status` `ok: 1280x720`. Turn on the
+viewer flag on `module_host/out1`.
+
+**Blocks 4–8 remain.** See *Remaining work*.
 
 ### Which file is current
 
@@ -88,6 +139,8 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `diagnose_module_host.py` | Read-only state dump of the host and loaded module. **Use this before guessing.** |
 | `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
 | `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
+| `build_kinetic_stripes.py` | Builds and exports `modules/kinetic_stripes/module.tox` and `thumbnail.png`. Finishes in two deferred stages (load, then lock the lookup image). |
+| `extract_locked_top.py` | Runs **outside** TD. Converts a locked TOP's `.data` from an expanded `.toe` into a PNG. |
 
 Why: custom parameters serialize as opaque magic type codes (`772804868`,
 `-1374678769`) whose *field layout differs between files from the same
@@ -200,13 +253,9 @@ un-cooked TOP: width, height and connector lists can all report defaults.
 
 From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 
-3. **`kinetic_stripes`** — port the existing stripes visual into the
-   `base_scene` contract. Source material is in
-   `ReactiveVisualsTouchDesignerProtoOsc.8.toe` (ramp/noise/transform/feedback
-   chain plus a replicator). Work is rewiring it to read motion lanes instead of
-   raw OSC, adding the `Scene` page parameters, and making it meaningful at idle
-   with all lanes at zero. **This is the next block.**
+3. ~~`kinetic_stripes`~~ — done (see *Current state*).
 4. **`orb_burst`** — first `hit_fx`; spawns bounded balls from `impact_trigger`.
+   **This is the next block.**
 5. **`clean_lockup`** — `brand_overlay` with logo, name and combined modes.
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
 7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
@@ -306,6 +355,16 @@ HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
   the last usable tempo". The implementation is a fixed 2 Hz LFO, so it always
   falls back to 120 BPM. Either correct the docs or wire `/rve/v2/tempo/bpm`
   into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
+- **`sync_bar_env` ignores `masterIntensity`, so `kinetic_stripes`' bar zoom —
+  its biggest move, up to 2× — fires at full even with master at `0`.** It was
+  grouped with the timing lanes, but it is an envelope (an amount), not a phase,
+  so scaling it is safe. Recommended fix: add it to the master list in
+  `build_performer_controls.py` and the lane spec. Owner's call.
+- **`kinetic_stripes` uses no `texture_*` or `mood_*` lane**, because the proto's
+  texture branch was locked and its palette is fixed. So `textureAmount` and
+  `toneAmount` have no effect on this scene, and `Paletteindex` is present but
+  unused. Faithful to what the proto rendered; revisit if the reference scene
+  should demonstrate every lane family.
 - **`texture_jitter` drifts rather than shimmers.** The spec calls it a
   "higher-frequency" lane, but `noise_tex` has `period 4`, so it wanders slowly.
   Check against what `kinetic_stripes` actually needs in Block 3.
