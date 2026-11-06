@@ -144,6 +144,9 @@ Rules:
 
 - `drive`, `hit`, `sync`, `density`, and `tone` always stay normalized to `0..1`
 - user controls are multiplied in later layers, not written back into the raw macro channels
+- `masterIntensity` is the master fader: it multiplies every energy lane on top of
+  that lane's own amount, and never touches timing (`sync_phase`, `sync_sine`,
+  `sync_triangle`, `sync_bar_env`), colour (`mood_*`), `impact_trigger` or `blackout_gate`
 - all scene modules read the same local macro names
 
 ## Motion Adapter
@@ -185,19 +188,19 @@ blackout_gate
 `body_drift`
 
 - slower continuous motion lane
-- derived from `drive` and `motionAmount`
+- derived from `drive * motionAmount * masterIntensity`
 - use for gentle offset, slow tunnel flow, or camera drift
 
 `impact_fast`
 
 - quick transient envelope
-- derived from `hit * flashAmount`
+- derived from `hit * flashAmount * masterIntensity`
 - use for flashes, stabs, bloom spikes, orb spawns
 
 `impact_wide`
 
 - longer impact envelope
-- derived from a softened version of `hit`
+- derived from a softened version of `hit`, scaled by `masterIntensity`
 - use for zoom punches, ripple growth, streak persistence
 
 `impact_trigger`
@@ -209,7 +212,7 @@ blackout_gate
 `sync_level`
 
 - shaped rhythmic envelope
-- passes through the engine `sync` macro
+- the engine `sync` macro, scaled by `masterIntensity`
 - use for pulsing brightness, scale throb, or any beat-felt amount
 
 `sync_phase`
@@ -239,13 +242,13 @@ blackout_gate
 `texture_level`
 
 - busyness lane
-- derived from `density * textureAmount`
+- derived from `density * textureAmount * masterIntensity`
 - use for noise opacity, distortion amount, particle count, or line density
 
 `texture_jitter`
 
 - higher-frequency texture helper
-- derived from `density`
+- derived from noise shaped by `density`, scaled by `textureAmount * masterIntensity`
 - use sparingly for shimmer, grain, or micro-motion
 
 `mood_warmth`
@@ -262,7 +265,7 @@ blackout_gate
 `brand_pulse`
 
 - restrained branding accent lane
-- derived mostly from `impact_wide` with a low ceiling, scaled by `brandAmount`
+- derived mostly from `impact_wide` with a low ceiling, scaled by `brandAmount * masterIntensity`
 - use for tasteful logo brightness or name emphasis
 
 `blackout_gate`

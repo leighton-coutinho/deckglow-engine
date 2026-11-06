@@ -10,6 +10,8 @@ For each scaled lane it compares the live MOTION_OUT value with
 clamp(source * control) computed independently from the source node, so a
 PASS means the multiply really happened. With every control at 1.0 that only
 proves the wiring; set one to 0.5 on performer_controls and run this again.
+masterIntensity at 0.5 should move eight lanes, textureAmount two, and every
+other control one.
 """
 
 TOL = 1e-3
@@ -58,26 +60,36 @@ else:
     fails += not ok
     print('  order            %s' % ('ok (16)' if ok else 'FAIL %s' % names))
 
-    # lane, control, node holding the unscaled source, channel on that node
+    # lane, controls, node holding the unscaled source, channel on that node
+    M = 'masterIntensity'
     checks = [
-        ('body_level',    'masterIntensity', ENGINE,                 'drive'),
-        ('body_drift',    'motionAmount',    A.op('lag_body_drift'), 0),
-        ('impact_fast',   'flashAmount',     ENGINE,                 'hit'),
-        ('texture_level', 'textureAmount',   ENGINE,                 'density'),
-        ('mood_warmth',   'toneAmount',      ENGINE,                 'tone'),
-        ('brand_pulse',   'brandAmount',     A.op('math_brand'),     0),
+        ('body_level',    [M],                  ENGINE,                  'drive'),
+        ('body_drift',    ['motionAmount', M],  A.op('lag_body_drift'),  0),
+        ('impact_fast',   ['flashAmount', M],   ENGINE,                  'hit'),
+        ('impact_wide',   [M],                  A.op('lag_impact_wide'), 0),
+        ('sync_level',    [M],                  ENGINE,                  'sync'),
+        ('texture_level', ['textureAmount', M], ENGINE,                  'density'),
+        ('texture_jitter',['textureAmount', M], A.op('mul_jitter'),      0),
+        ('mood_warmth',   ['toneAmount'],       ENGINE,                  'tone'),
+        ('brand_pulse',   ['brandAmount', M],   A.op('math_brand'),      0),
     ]
     controls = ROOT.op('engine_controls')
-    for lane, ctl, src, key in checks:
+    for lane, ctls, src, key in checks:
         try:
-            amount = chan(controls, ctl)
             raw = chan(src, key)
-            want = min(1.0, max(0.0, raw * amount))
+            want = raw
+            terms = []
+            for ctl in ctls:
+                amount = chan(controls, ctl)
+                want *= amount
+                terms.append('%s %.3f' % (ctl, amount))
+            want = min(1.0, max(0.0, want))
             got = chan(OUT, lane)
             ok = abs(got - want) <= TOL
             fails += not ok
-            print('  %-15s  %.4f  = clamp(%.4f * %s %.3f)  %s'
-                  % (lane, got, raw, ctl, amount, 'PASS' if ok else 'FAIL want %.4f' % want))
+            print('  %-15s  %.4f  = clamp(%.4f * %s)  %s'
+                  % (lane, got, raw, ' * '.join(terms),
+                     'PASS' if ok else 'FAIL want %.4f' % want))
         except Exception as e:
             fails += 1
             print('  %-15s  <%s: %s>' % (lane, type(e).__name__, e))

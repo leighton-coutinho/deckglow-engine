@@ -370,6 +370,13 @@ Modules therefore do not expose matching parameters. An earlier draft defined
 removed: with a control at both levels a performer at `0.5` and a module at
 `0.5` would silently yield `0.25`.
 
+`masterIntensity` is a master fader: it multiplies every energy lane on top of
+that lane's own amount, so `impact_fast = hit * flashAmount * masterIntensity`.
+That stacking is intended — two different controls, like a channel fader and a
+mixer master — and is not the duplicate-control problem above. Timing, colour,
+`impact_trigger` and `blackout_gate` lanes are never scaled. The exact lane
+list is in HYBRID_RUNTIME_ARCHITECTURE.md (Motion Lane Meanings).
+
 The reason for choosing the adapter over the module is reliability. The runtime
 guarantees a performer control works regardless of how carefully any given
 module was written, which matters once approved creator packs ship modules the

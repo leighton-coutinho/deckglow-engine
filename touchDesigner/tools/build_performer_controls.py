@@ -47,15 +47,22 @@ CONTROLS = [
     'brandAmount',
 ]
 
-# lane -> the control that scales it, one entry per lane definition in
+# lane -> the controls that scale it, per the lane definitions in
 # HYBRID_RUNTIME_ARCHITECTURE.md. Every other lane passes through unscaled.
+#
+# masterIntensity is the master fader: it multiplies every *energy* lane on top
+# of that lane's own amount. It never touches timing (sync_phase/sine/triangle,
+# sync_bar_env), colour (mood_*), the impact_trigger event or blackout_gate.
 SCALED = {
-    'body_level':    'masterIntensity',   # drive * masterIntensity
-    'body_drift':    'motionAmount',      # lag(drive) * motionAmount
-    'impact_fast':   'flashAmount',       # hit * flashAmount
-    'texture_level': 'textureAmount',     # density * textureAmount
-    'mood_warmth':   'toneAmount',        # tone * toneAmount
-    'brand_pulse':   'brandAmount',       # 0.25 * lag(hit) * brandAmount
+    'body_level':    ['masterIntensity'],                  # drive
+    'body_drift':    ['motionAmount', 'masterIntensity'],  # lag(drive)
+    'impact_fast':   ['flashAmount', 'masterIntensity'],   # hit
+    'impact_wide':   ['masterIntensity'],                  # lag(hit)
+    'sync_level':    ['masterIntensity'],                  # sync
+    'texture_level': ['textureAmount', 'masterIntensity'], # density
+    'texture_jitter':['textureAmount', 'masterIntensity'], # noise * density
+    'mood_warmth':   ['toneAmount'],                       # tone
+    'brand_pulse':   ['brandAmount', 'masterIntensity'],   # 0.25 * lag(hit)
 }
 
 # motion_merge input order. Unchanged from Block 1 so channel indices hold.
@@ -136,20 +143,25 @@ if fed != ['engine_controls']:
 
 # --------------------------------------------- motion_adapter: lane scaling
 in0 = A.op('in0_engine')
-sources = {}
-for lane, ctl in SCALED.items():
-    lane_op = A.op('lane_' + lane)
 
+# one Select per control, shared by every lane that uses it
+ctls = {}
+for i, ctl in enumerate(CONTROLS):
     sel = A.create(selectCHOP, 'ctl_' + ctl)
     sel.par.channames = ctl
     set_inputs(sel, [in0])
-    place(sel, 11200, lane_op.nodeY)
+    place(sel, 11200, -9240 - i * 420)
+    ctls[ctl] = sel
+
+sources = {}
+for lane, amounts in SCALED.items():
+    lane_op = A.op('lane_' + lane)
 
     # Math combines channels by index and keeps the first input's names, so
     # the lane name survives: input 0 must stay the lane.
     mul = A.create(mathCHOP, 'scale_' + lane)
     mul.par.chopop = 'mul'
-    set_inputs(mul, [lane_op, sel])
+    set_inputs(mul, [lane_op] + [ctls[c] for c in amounts])
     place(mul, 12800, lane_op.nodeY)
 
     sources[lane] = mul
@@ -179,7 +191,8 @@ set_inputs(out1, [clamp])
 print('performer controls built')
 print('  controls:', ', '.join('%s=%g' % (n, carried.get(n, 1.0)) for n in CONTROLS))
 print('  carried :', sorted(carried) or 'none (first build)')
-print('  scaled  :', ', '.join('%s*%s' % (l, c) for l, c in SCALED.items()))
+for lane, amounts in SCALED.items():
+    print('  scaled  : %-14s * %s' % (lane, ' * '.join(amounts)))
 print('  clamp   : type=%s 0..1, scope "%s"' % (clamp.par.type.eval(), clamp.par.scope.eval()))
 print('  checking in 2 frames...')
 

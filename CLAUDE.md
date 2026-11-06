@@ -248,25 +248,57 @@ written against final lane semantics. Layout:
   lane_<x> + ctl_<amount> ─ scale_<x> (Math mul) ─ motion_merge ─ clamp_lanes ─ out1
 ```
 
-Six lanes are scaled, one control each, exactly as HYBRID_RUNTIME_ARCHITECTURE
-defines them: `body_level`×`masterIntensity`, `body_drift`×`motionAmount`,
-`impact_fast`×`flashAmount`, `texture_level`×`textureAmount`,
-`mood_warmth`×`toneAmount`, `brand_pulse`×`brandAmount`. The other ten pass
-through. `clamp_lanes` limits every lane to `0..1` except `sync_sine`.
+Nine lanes are scaled, as HYBRID_RUNTIME_ARCHITECTURE defines them:
+
+| Lane | × |
+| --- | --- |
+| `body_level` | `masterIntensity` |
+| `body_drift` | `motionAmount` × `masterIntensity` |
+| `impact_fast` | `flashAmount` × `masterIntensity` |
+| `impact_wide` | `masterIntensity` |
+| `sync_level` | `masterIntensity` |
+| `texture_level` | `textureAmount` × `masterIntensity` |
+| `texture_jitter` | `textureAmount` × `masterIntensity` |
+| `mood_warmth` | `toneAmount` |
+| `brand_pulse` | `brandAmount` × `masterIntensity` |
+
+The other seven pass through. `clamp_lanes` limits every lane to `0..1` except
+`sync_sine`.
 
 `motion_adapter` itself is still the hand-built Block 1 network in the `.toe`;
 the script owns only `ctl_*`, `scale_*`, `clamp_lanes` and the input wiring of
 `motion_merge` and `out1`. Save the `.toe` after running it.
 
-Verified in test mode: all six lanes PASS at `1.0`, and with `masterIntensity`
-at `0.51` only `body_level` moved (`0.8320 → 0.4243`, i.e. `× 0.51`) while the
-other five held. The other five controls were not individually stepped; they are
-built by the same loop, so a failure there would be a wiring typo, which the
-diagnose script would flag.
+Verified live in test mode for the master-fader version (2026-11-05): with
+`masterIntensity` at `0.5` all nine scaled lanes PASS, the eight master lanes
+halved (`body_level 0.65 → 0.325`, `texture_level 0.45 → 0.225`, and so on) and
+`mood_warmth` held at `0.5`. `brand_pulse`'s source read `0.2146 = 0.25 ×
+impact_wide 0.8585`, confirming it is not double-scaled by the master through
+`impact_wide`.
+
+Test mode is the easiest place to check: `engine_in/test_levels` holds
+`drive 0.65`, `density 0.45`, `tone 0.5`. The saved `.toe` has
+`engine_input_mode` at index `0` (live); set `par.index = 1` for test mode. An
+earlier live-mode run showed identical values across runs minutes apart — most
+likely oscin holding the last values from a stopped engine.
 
 To re-check: run the builder (it prints a PASS/FAIL table two frames later), or
 change a value on `performer_controls` (`par.const0value`..`const5value`) and
 run `diagnose_performer_controls.py`.
+
+**`masterIntensity` is a master fader** (2026-11-05). It multiplies every energy
+lane on top of that lane's own amount (table above), rather than scaling only
+`body_level` as the original lane definitions said. Chosen because a DJ
+turning "master" down expects flashes and texture to calm too; scaling only
+`body_level` left hits punching at full. Stacking `flashAmount × masterIntensity`
+is deliberate and is not the double-multiply problem §9.1 removed, which was
+the *same* control applied at two levels. Timing lanes are excluded because a
+scaled phase ramp sweeps halfway and stops; colour lanes because scaling them
+shifts the palette rather than the energy. `texture_jitter` is included (and
+also follows `textureAmount`): busy detail such as grain and shimmer is the first
+thing a VJ pulls back, and the unscaled timing lanes already keep the screen
+alive at master `0`. Spec updated in
+HYBRID_RUNTIME_ARCHITECTURE (lane meanings) and SCENE_MODULE_SPEC §9.1.
 
 ## Open decisions and known gaps
 
@@ -274,10 +306,9 @@ run `diagnose_performer_controls.py`.
   the last usable tempo". The implementation is a fixed 2 Hz LFO, so it always
   falls back to 120 BPM. Either correct the docs or wire `/rve/v2/tempo/bpm`
   into `engine_in` and drive the fallback LFO from it. Decide before Block 8.
-- **`masterIntensity` scales only `body_level`.** That is what the lane
-  definitions say and what was built, but a "master" control that leaves
-  flashes, texture and sync untouched may not be what a DJ expects. Confirm
-  with the owner before Block 3 copies the semantics into every module.
+- **`texture_jitter` drifts rather than shimmers.** The spec calls it a
+  "higher-frequency" lane, but `noise_tex` has `period 4`, so it wanders slowly.
+  Check against what `kinetic_stripes` actually needs in Block 3.
 - **`toneAmount` at `0` pins `mood_warmth` to `0`** (fully cool), not to a
   neutral `0.5`, and `mood_softness` (`1 - tone`) ignores it. Spec-literal;
   worth a second look if "less tone influence" should mean "more neutral".
