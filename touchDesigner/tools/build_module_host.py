@@ -1,111 +1,30 @@
-"""Builds /project1/module_host, the Block 2 scene-module wrapper.
+"""Builds the scene-module wrappers: a two-slot stack, base -> hit.
 
 Run inside TouchDesigner's textport (Alt+T):
 
     exec(open(r'C:\\Users\\ljlco\\source\\repos\\CodexProjects\\ReactiveVisualEngineCode\\touchDesigner\\tools\\build_module_host.py').read())
 
-Re-running destroys and rebuilds the COMP, so it is safe to run repeatedly.
+    MOTION_OUT --+-------------------> module_host (base_scene) --+
+                 |                                                 | image
+                 +-------------------> hit_host    (hit_fx)  <-----+
+
+module_host is the Block 2 wrapper; hit_host is the same wrapper in the hit_fx
+slot, taking module_host's output as its image (Block 4). brand_overlay and
+finish_fx slots follow the same pattern when those blocks land.
+
+Re-running destroys and rebuilds both COMPs, so it is safe to run repeatedly;
+each carries its Modulepath and Moduletype across rebuilds. Because a rebuild
+reloads nothing, pulse Load on each host afterwards.
+
 Contract: docs/SCENE_MODULE_SPEC.md sections 9 (standard parameters),
 10 (slot connector order) and 12 (lifecycle).
 """
 
 ROOT = op('/project1')
-NAME = 'module_host'
 
-existing = ROOT.op(NAME)
-carried = {}
-if existing:
-    for nm in ('Modulepath', 'Moduletype'):
-        p = getattr(existing.par, nm, None)
-        if p is not None:
-            carried[nm] = p.eval()
-    existing.destroy()
-
-host = ROOT.create(baseCOMP, NAME)
-host.nodeX, host.nodeY = 6400, 0
-host.nodeWidth, host.nodeHeight = 900, 300
-
-# ---------------------------------------------------------------- inputs
-ins = [
-    ('in0_image', inTOP),
-    ('in1_motion', inCHOP),
-    ('in2_palette', inDAT),
-    ('in3_brand', inDAT),
-    ('in4_logo', inTOP),
-]
-for i, (nm, kind) in enumerate(ins):
-    o = host.create(kind, nm)
-    o.nodeX, o.nodeY = 0, -i * 200
-
-black = host.create(constantTOP, 'black')
-black.par.colorr = 0
-black.par.colorg = 0
-black.par.colorb = 0
-black.par.alpha = 1
-black.nodeX, black.nodeY = 400, -1200
-
-bypass_src = host.create(nullTOP, 'bypass_src')
-bypass_src.nodeX, bypass_src.nodeY = 800, -1000
-
-module_null = host.create(nullTOP, 'module_null')
-module_null.nodeX, module_null.nodeY = 800, 0
-
-out_switch = host.create(switchTOP, 'out_switch')
-out_switch.nodeX, out_switch.nodeY = 1200, -400
-out_switch.inputConnectors[0].connect(module_null)
-out_switch.inputConnectors[1].connect(bypass_src)
-
-out1 = host.create(outTOP, 'out1')
-out1.nodeX, out1.nodeY = 1600, -400
-out1.inputConnectors[0].connect(out_switch)
-
-# ------------------------------------------------------------ parameters
-page = host.appendCustomPage('Module')
-
-p = page.appendFile('Modulepath')[0]
-p.default = ''
-
-p = page.appendMenu('Moduletype')[0]
-p.menuNames = ['base_scene', 'hit_fx', 'brand_overlay', 'finish_fx']
-p.menuLabels = ['Base Scene', 'Hit FX', 'Brand Overlay', 'Finish FX']
-p.default = 'base_scene'
-
-page.appendPulse('Load')
-page.appendPulse('Unload')
-
-p = page.appendStr('Status')[0]
-p.default = 'empty'
-p.val = 'empty'
-
-std = host.appendCustomPage('DeckGlow')
-
-p = std.appendToggle('Moduleactive')[0]
-p.default = 1
-p.val = 1
-
-p = std.appendFloat('Intensity')[0]
-p.default = 1
-p.normMin, p.normMax = 0, 1
-p.val = 1
-
-p = std.appendInt('Seed')[0]
-p.default = 1
-p.val = 1
-
-std.appendPulse('Reset')
-
-p = std.appendInt('Outputwidth')[0]
-p.default = 1920
-p.val = 1920
-
-p = std.appendInt('Outputheight')[0]
-p.default = 1080
-p.val = 1080
-
-# ----------------------------------------------------------------- logic
-logic = host.create(textDAT, 'host')
-logic.nodeX, logic.nodeY = 0, -1600
-logic.text = '''
+# Lifecycle logic baked into each host's 'host' Text DAT. Kept at top level so
+# its indentation is exactly what the DAT receives.
+HOST_LOGIC = '''
 # Lifecycle for the scene-module wrapper. See docs/SCENE_MODULE_SPEC.md s12.
 
 WIRING = {
@@ -261,16 +180,7 @@ def OnValueChange(par):
         Refresh()
 '''
 
-pe = host.create(parameterexecuteDAT, 'host_parexec')
-pe.nodeX, pe.nodeY = 400, -1600
-pe.par.op = host
-pe.par.pars = '*'
-pe.par.custom = True
-pe.par.builtin = False
-pe.par.valuechange = True
-pe.par.onpulse = True
-pe.par.active = True
-pe.text = '''
+HOST_PAREXEC = '''
 def onValueChange(par, prev):
     op('host').module.OnValueChange(par)
     return
@@ -280,23 +190,143 @@ def onPulse(par):
     return
 '''
 
-for nm, value in carried.items():
-    getattr(host.par, nm).val = value
 
-# --------------------------------------------------------- host wiring
-motion = ROOT.op('MOTION_OUT')
-if motion:
-    host.inputConnectors[1].connect(motion)
+def build_host(name, x, y, default_type, image_src=None):
+    """Destroy and rebuild one wrapper. image_src feeds in0_image (a COMP is
+    connected through its output connector, never as a direct source)."""
+    existing = ROOT.op(name)
+    carried = {}
+    if existing:
+        for nm in ('Modulepath', 'Moduletype'):
+            p = getattr(existing.par, nm, None)
+            if p is not None:
+                carried[nm] = p.eval()
+        existing.destroy()
 
-host.op('host').module.Refresh()
+    host = ROOT.create(baseCOMP, name)
+    host.nodeX, host.nodeY = x, y
+    host.nodeWidth, host.nodeHeight = 900, 300
 
-print('module_host built at', host.path)
-try:
-    conns = host.inputConnectors
-    print('input connectors:', len(conns))
-    print('in operators:', sorted(o.name for o in host.children
-                                  if o.name.startswith('in')))
-    print('motion wired:', bool(conns[1].connections) if len(conns) > 1 else False)
-    print('status:', host.par.Status.eval())
-except Exception as e:
-    print('(diagnostics unavailable: %s)' % e)
+    # ------------------------------------------------------------ inputs
+    ins = [
+        ('in0_image', inTOP),
+        ('in1_motion', inCHOP),
+        ('in2_palette', inDAT),
+        ('in3_brand', inDAT),
+        ('in4_logo', inTOP),
+    ]
+    for i, (nm, kind) in enumerate(ins):
+        o = host.create(kind, nm)
+        o.nodeX, o.nodeY = 0, -i * 200
+
+    black = host.create(constantTOP, 'black')
+    black.par.colorr = 0
+    black.par.colorg = 0
+    black.par.colorb = 0
+    black.par.alpha = 1
+    black.nodeX, black.nodeY = 400, -1200
+
+    bypass_src = host.create(nullTOP, 'bypass_src')
+    bypass_src.nodeX, bypass_src.nodeY = 800, -1000
+
+    module_null = host.create(nullTOP, 'module_null')
+    module_null.nodeX, module_null.nodeY = 800, 0
+
+    out_switch = host.create(switchTOP, 'out_switch')
+    out_switch.nodeX, out_switch.nodeY = 1200, -400
+    out_switch.inputConnectors[0].connect(module_null)
+    out_switch.inputConnectors[1].connect(bypass_src)
+
+    out1 = host.create(outTOP, 'out1')
+    out1.nodeX, out1.nodeY = 1600, -400
+    out1.inputConnectors[0].connect(out_switch)
+
+    # -------------------------------------------------------- parameters
+    page = host.appendCustomPage('Module')
+
+    p = page.appendFile('Modulepath')[0]
+    p.default = ''
+
+    p = page.appendMenu('Moduletype')[0]
+    p.menuNames = ['base_scene', 'hit_fx', 'brand_overlay', 'finish_fx']
+    p.menuLabels = ['Base Scene', 'Hit FX', 'Brand Overlay', 'Finish FX']
+    p.default = default_type
+    p.val = default_type
+
+    page.appendPulse('Load')
+    page.appendPulse('Unload')
+
+    p = page.appendStr('Status')[0]
+    p.default = 'empty'
+    p.val = 'empty'
+
+    std = host.appendCustomPage('DeckGlow')
+
+    p = std.appendToggle('Moduleactive')[0]
+    p.default = 1
+    p.val = 1
+
+    p = std.appendFloat('Intensity')[0]
+    p.default = 1
+    p.normMin, p.normMax = 0, 1
+    p.val = 1
+
+    p = std.appendInt('Seed')[0]
+    p.default = 1
+    p.val = 1
+
+    std.appendPulse('Reset')
+
+    p = std.appendInt('Outputwidth')[0]
+    p.default = 1920
+    p.val = 1920
+
+    p = std.appendInt('Outputheight')[0]
+    p.default = 1080
+    p.val = 1080
+
+    # ------------------------------------------------------------- logic
+    logic = host.create(textDAT, 'host')
+    logic.nodeX, logic.nodeY = 0, -1600
+    logic.text = HOST_LOGIC
+
+    pe = host.create(parameterexecuteDAT, 'host_parexec')
+    pe.nodeX, pe.nodeY = 400, -1600
+    pe.par.op = host
+    pe.par.pars = '*'
+    pe.par.custom = True
+    pe.par.builtin = False
+    pe.par.valuechange = True
+    pe.par.onpulse = True
+    pe.par.active = True
+    pe.text = HOST_PAREXEC
+
+    for nm, value in carried.items():
+        getattr(host.par, nm).val = value
+
+    # ----------------------------------------------------- host wiring
+    motion = ROOT.op('MOTION_OUT')
+    if motion:
+        host.inputConnectors[1].connect(motion)
+    if image_src is not None:
+        host.inputConnectors[0].connect(image_src.outputConnectors[0])
+
+    host.op('host').module.Refresh()
+
+    print('%s built at %s' % (name, host.path))
+    try:
+        conns = host.inputConnectors
+        print('  type          :', host.par.Moduletype.eval())
+        print('  image wired   :', bool(conns[0].connections),
+              '(from %s)' % image_src.name if image_src is not None else '')
+        print('  motion wired  :', bool(conns[1].connections) if len(conns) > 1 else False)
+        print('  Modulepath    :', host.par.Modulepath.eval() or '(none)')
+        print('  status        :', host.par.Status.eval())
+    except Exception as e:
+        print('  (diagnostics unavailable: %s)' % e)
+    return host
+
+
+base_host = build_host('module_host', 6400, 0, 'base_scene')
+hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host)
+print('pulse Load on each host to (re)load its module')

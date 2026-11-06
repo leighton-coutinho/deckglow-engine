@@ -110,7 +110,51 @@ and the files it wrote), then in `module_host` set `Modulepath` to
 `base_scene`, pulse `Load` and expect `Status` `ok: 1280x720`. Turn on the
 viewer flag on `module_host/out1`.
 
-**Blocks 4–8 remain.** See *Remaining work*.
+**Block 4 — `orb_burst`: done and verified** (2026-11-05).
+
+`tools/build_orb_burst.py` builds and exports `modules/orb_burst/module.tox` +
+`thumbnail.png`; `module.json` is checked in. The host builder now makes a
+two-slot stack: `module_host` (base_scene) feeds its output into a new
+`hit_host` (hit_fx) as `in0_image`, both reading `MOTION_OUT`.
+
+```
+in1_motion ─ motion ──(read by Python)── render/pool  Script CHOP, 32 slots
+                                           ├ orbs_a  x y radius alpha
+                                           └ orbs_b  r g b core
+in0_image ─ render/in_image ─ render/orb_fx  GLSL TOP: soft discs + blend mode
+                           └─ render/out_switch  exact pass-through ─ out1
+```
+
+- `impact_trigger` (rising edge) spawns `Spawncount` orbs into a fixed ring of
+  32 slots, oldest reused — bounded by construction.
+- Brightness per burst is `min(1, 2 × impact_fast)` at the trigger, so
+  `flashAmount` and `masterIntensity` reach the orbs even though
+  `impact_trigger` itself is unscaled. A burst at zero flash is skipped.
+- `impact_wide` sustains alpha (`0.6 + 0.4 × impact_wide`) — persistence.
+- Positions from `random.Random(Seed, burst number)`; Reset, `Moduleactive`
+  and `Seed` changes clear the pool, so a seed replays the same orbs.
+- Palette roles primary/secondary/accent from `in2_palette`, spec defaults
+  when absent; `Colorize` lerps from white.
+- `Moduleactive` off or `Fxamount × Intensity = 0` switches to the untouched
+  input. Declares `usesPython: true`.
+
+The pool logic was exercised outside TD with stand-in objects (bounded at 32
+after 80 spawns, held trigger does not re-fire, zero flash spawns nothing,
+orbs expire, Reset + same Seed replays identical positions).
+
+Verified in TouchDesigner (2026-11-05): the export passed its shader and pool
+checks; `thumbnail.png` shows eight soft orbs in the three default palette
+colours, so the GLSL compile and the CHOP-to-uniform-array mapping work. Both
+hosts load with `Status` `ok: 1280x720`, `hit_host` takes its image from
+`module_host`, no errors anywhere. Confirmed by eye in test mode: orbs burst
+over the stripes, `Fxamount 0` gives plain stripes, `Blendmode` switches the
+look, and `flashAmount 0` stops the orbs.
+
+Without a palette input and with `impact_wide` low, orbs sit at about 60%
+brightness (`persist = 0.6 + 0.4 × impact_wide`), which reads slightly dim in
+the thumbnail. A look tweak, not a fault.
+
+**Blocks 5–8 remain.** See *Remaining work*.
 
 ### Which file is current
 
@@ -134,9 +178,10 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 
 | Script | Purpose |
 | --- | --- |
-| `build_module_host.py` | Builds `/project1/module_host`. Idempotent; carries `Modulepath` across rebuilds. |
+| `build_module_host.py` | Builds the slot stack: `/project1/module_host` (base_scene) and `/project1/hit_host` (hit_fx, image from `module_host`). Idempotent; carries `Modulepath`/`Moduletype`. Pulse `Load` on each host after rebuilding. |
 | `build_stub_module.py` | Builds and exports `modules/stub_scene/module.tox`, a flat-colour test fixture. |
-| `diagnose_module_host.py` | Read-only state dump of the host and loaded module. **Use this before guessing.** |
+| `diagnose_module_host.py` | Read-only state dump of both hosts and their loaded modules, including orb pool and shader state. **Use this before guessing.** |
+| `build_orb_burst.py` | Builds and exports `modules/orb_burst/module.tox` and `thumbnail.png`. Checks the shader compiled and the pool produced orbs before saving. |
 | `build_performer_controls.py` | Adds `performer_controls` + `engine_controls` before the adapter and patches `motion_adapter` in place (lane scaling, output clamp). Idempotent; carries control values. Runs the diagnose script itself. |
 | `diagnose_performer_controls.py` | Read-only. Recomputes each scaled lane from its source and reports PASS/FAIL, plus lane order and clamp range. |
 | `build_kinetic_stripes.py` | Builds and exports `modules/kinetic_stripes/module.tox` and `thumbnail.png`. Finishes in two deferred stages (load, then lock the lookup image). |
@@ -217,10 +262,17 @@ raises `td.tdError: Invalid number or type of arguments`. Use
 - **Internal names**: `C:\Program Files\Derivative\TouchDesigner\Config\TDParameterHelp.json`
   → `["help"]["CHOPs"]["logicCHOP"]["parameters"]`. Parse with Python;
   PowerShell 5.1's `ConvertFrom-Json` chokes on its duplicate case-insensitive keys.
-- **Menu token values are NOT in that JSON.** Mine them from real files: expand
-  the 278 `.tox` files under `Samples\Palette` and grep the `.parm` files. That
-  is how `preop 0 rise`, `convert 0 bound` and `outputresolution 0 custom` were
-  confirmed.
+- **Menu token values are NOT in that JSON.** They *are* in the offline help
+  that ships with TouchDesigner:
+  `Samples\Learn\OfflineHelp\https.docs.derivative.ca\<Operator>.htm` lists
+  each menu as `Label token` pairs (e.g. `GLSL_TOP.htm`: `vec4 vec4`,
+  `Uniform Array uniformarray`). Strip tags and grep. The same folder has the
+  Python class docs (`ScriptCHOP_Class.htm`). Mining expanded `.tox` files
+  under `Samples\Palette` also works and is how `preop 0 rise`,
+  `convert 0 bound` and `outputresolution 0 custom` were first confirmed.
+- **A Script CHOP only cooks when its inputs change** unless its callbacks
+  return `CookLevel.WHEN_USED` (every frame while used) from
+  `onGetCookLevel`. Anything time-based — fades, lifetimes — needs that.
 - Multi-value parameters take suffixes (`lag1`/`lag2`, `resolutionw`/`resolutionh`,
   `colorr`/`colorg`/`colorb`), except Logic CHOP bounds which are
   `boundmin`/`boundmax`. The JSON lists only the logical base name.
@@ -254,9 +306,10 @@ un-cooked TOP: width, height and connector lists can all report defaults.
 From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
 
 3. ~~`kinetic_stripes`~~ — done (see *Current state*).
-4. **`orb_burst`** — first `hit_fx`; spawns bounded balls from `impact_trigger`.
-   **This is the next block.**
+4. ~~`orb_burst`~~ — done (see *Current state*).
 5. **`clean_lockup`** — `brand_overlay` with logo, name and combined modes.
+   **This is the next block.** Needs a prepared brand DAT and logo TOP source,
+   and a third host slot fed from `hit_host`.
 6. **`projector_safe`** — `finish_fx`, plus final hardware safety in `/output`.
 7. **Quarantine validation and manifest discovery** — the `/scene_library` layer.
 8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
