@@ -1,0 +1,137 @@
+{
+  "contract": "deckglow.scene-module/1",
+  "status": "frozen",
+  "frozen": "2026-11-06",
+  "runtimeApi": "2.0.0",
+  "spec": "docs/SCENE_MODULE_SPEC.md",
+  "note": "Machine-readable form of the frozen module contract. touchDesigner/tools/check_contract.py fails if the spec, the validator or the runtime builders disagree with this file. Change it only under SCENE_MODULE_SPEC s16.",
+
+  "manifest": {
+    "schema": "deckglow.scene-module/1",
+    "required": ["schema", "id", "type", "displayName", "author", "version",
+                 "runtimeApi", "entry", "thumbnail", "performanceTier", "tags", "controls"],
+    "optional": ["description", "license", "homepage", "contentRating", "capabilities"],
+    "capabilities": ["usesPython", "usesAudioFileIn", "supportsAlphaAssets"],
+    "types": ["base_scene", "hit_fx", "brand_overlay", "finish_fx"],
+    "performanceTiers": ["light", "standard", "heavy"],
+    "controlTypes": ["float", "integer", "toggle", "menu", "color"],
+    "limits": {"displayName": 48, "author": 48, "tags": 8, "controls": 8},
+    "thumbnail": {"format": "png", "aspect": "16:9", "recommended": [640, 360]}
+  },
+
+  "lanes": [
+    {"name": "body_level",     "range": [0, 1],  "kind": "energy", "performer": ["masterIntensity"]},
+    {"name": "body_drift",     "range": [0, 1],  "kind": "energy", "performer": ["motionAmount", "masterIntensity"]},
+    {"name": "impact_fast",    "range": [0, 1],  "kind": "energy", "performer": ["flashAmount", "masterIntensity"]},
+    {"name": "impact_wide",    "range": [0, 1],  "kind": "energy", "performer": ["masterIntensity"]},
+    {"name": "impact_trigger", "range": [0, 1],  "kind": "event",  "performer": []},
+    {"name": "sync_level",     "range": [0, 1],  "kind": "energy", "performer": ["masterIntensity"]},
+    {"name": "sync_phase",     "range": [0, 1],  "kind": "timing", "performer": []},
+    {"name": "sync_sine",      "range": [-1, 1], "kind": "timing", "performer": []},
+    {"name": "sync_triangle",  "range": [0, 1],  "kind": "timing", "performer": []},
+    {"name": "sync_bar_env",   "range": [0, 1],  "kind": "energy", "performer": ["masterIntensity"]},
+    {"name": "texture_level",  "range": [0, 1],  "kind": "energy", "performer": ["textureAmount", "masterIntensity"]},
+    {"name": "texture_jitter", "range": [0, 1],  "kind": "energy", "performer": ["textureAmount", "masterIntensity"]},
+    {"name": "mood_warmth",    "range": [0, 1],  "kind": "colour", "centred": 0.5, "performer": ["toneAmount"]},
+    {"name": "mood_softness",  "range": [0, 1],  "kind": "colour", "centred": 0.5, "performer": ["toneAmount"]},
+    {"name": "brand_pulse",    "range": [0, 1],  "kind": "energy", "performer": ["brandAmount", "masterIntensity"]},
+    {"name": "blackout_gate",  "range": [0, 1],  "kind": "safety", "performer": []}
+  ],
+
+  "performerControls": ["masterIntensity", "motionAmount", "flashAmount",
+                        "textureAmount", "toneAmount", "brandAmount"],
+
+  "standardParameters": {
+    "page": "DeckGlow",
+    "parameters": [
+      {"name": "Moduleactive", "style": "Toggle", "default": 1},
+      {"name": "Intensity",    "style": "Float",  "default": 1, "range": [0, 1]},
+      {"name": "Seed",         "style": "Int",    "default": 1},
+      {"name": "Reset",        "style": "Pulse"},
+      {"name": "Outputwidth",  "style": "Int",    "default": 1920, "note": "a request; the granted size may differ (s6.4)"},
+      {"name": "Outputheight", "style": "Int",    "default": 1080, "note": "a request; the granted size may differ (s6.4)"}
+    ]
+  },
+
+  "slots": {
+    "base_scene": {
+      "inputs": [
+        {"name": "in0_motion",  "family": "CHOP", "required": true},
+        {"name": "in1_palette", "family": "DAT",  "required": false}
+      ],
+      "page": null,
+      "parameters": []
+    },
+    "hit_fx": {
+      "inputs": [
+        {"name": "in0_image",   "family": "TOP",  "required": true},
+        {"name": "in1_motion",  "family": "CHOP", "required": true},
+        {"name": "in2_palette", "family": "DAT",  "required": false}
+      ],
+      "page": "Hit FX",
+      "parameters": [
+        {"name": "Fxamount",  "style": "Float", "default": 1, "range": [0, 1]},
+        {"name": "Blendmode", "style": "Menu",  "default": "over", "tokens": ["over", "add", "screen"]},
+        {"name": "Colorize",  "style": "Float", "default": 1, "range": [0, 1]}
+      ]
+    },
+    "brand_overlay": {
+      "inputs": [
+        {"name": "in0_image",  "family": "TOP",  "required": true},
+        {"name": "in1_motion", "family": "CHOP", "required": true},
+        {"name": "in2_brand",  "family": "DAT",  "required": true},
+        {"name": "in3_logo",   "family": "TOP",  "required": false}
+      ],
+      "page": "Brand",
+      "parameters": [
+        {"name": "Logoopacity", "style": "Float", "default": 1, "range": [0, 1]},
+        {"name": "Nameopacity", "style": "Float", "default": 1, "range": [0, 1]},
+        {"name": "Placement",   "style": "Menu",  "tokens": ["center", "top_left", "top_right", "bottom_left", "bottom_right"]},
+        {"name": "Safearea",    "style": "Float", "default": 0.05, "range": [0, 0.25]}
+      ]
+    },
+    "finish_fx": {
+      "inputs": [
+        {"name": "in0_image",  "family": "TOP",  "required": true},
+        {"name": "in1_motion", "family": "CHOP", "required": true}
+      ],
+      "page": "Finish",
+      "parameters": [
+        {"name": "Contrast",    "style": "Float",  "default": 1, "range": [0, 2]},
+        {"name": "Brightness",  "style": "Float",  "default": 1, "range": [0, 2]},
+        {"name": "Softness",    "style": "Float",  "default": 0, "range": [0, 1]},
+        {"name": "Outputclamp", "style": "Toggle", "default": 1}
+      ]
+    }
+  },
+
+  "requiredOperators": ["render", "out1"],
+  "reservedNames": {
+    "in0_image": "TOP", "in0_motion": "CHOP", "in1_motion": "CHOP",
+    "in1_palette": "DAT", "in2_palette": "DAT", "in2_brand": "DAT",
+    "in3_logo": "TOP", "render": "COMP", "out1": "TOP"
+  },
+
+  "palette": {
+    "columns": ["role", "r", "g", "b", "a"],
+    "requiredRoles": ["background", "primary", "secondary", "accent"],
+    "chosenBy": "runtime"
+  },
+  "brand": {
+    "requiredKeys": ["displayName", "mode", "scale", "opacity"],
+    "optionalKeys": ["subtitle", "primaryColor", "secondaryColor"],
+    "modes": ["logo", "name", "logo_and_name"]
+  },
+
+  "controls": {"page": "Controls", "max": 8},
+
+  "resolution": {
+    "fixed": false,
+    "rule": "render at any size given; size everything as a fraction of the frame (s6.4)",
+    "validatedAt": ["stack", [640, 360]]
+  },
+
+  "validation": {
+    "runtimeStates": ["idle", "drive", "hit", "sync", "dense", "reset", "bypass", "resolution"]
+  }
+}

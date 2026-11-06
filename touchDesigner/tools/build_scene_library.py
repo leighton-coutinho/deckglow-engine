@@ -495,6 +495,20 @@ def _resolution(m, mtype, rec):
         yield wait
     hi, hi_res = _job.pop('probe', None), (out.width, out.height)
 
+    # The comparison only means something if the probe frame shows the
+    # module's own content: a module that drew nothing would match trivially.
+    if hi is not None:
+        if base:
+            seen = float(hi[:, :, :3].mean())
+            rec('runtime', 'probe has content', seen > 0.01,
+                'mean %%.3f in the probe state' %% seen, warn=True)
+        else:
+            src = img.numpyArray()
+            seen = (float(np.abs(_grid(hi) - _grid(np.array(src, dtype='float32'))).max())
+                    if src is not None else 0.0)
+            rec('runtime', 'probe has content', seen > STABLE,
+                'differs from its input by %%.3f in the probe state' %% seen, warn=True)
+
     if base:
         m.par.Outputwidth, m.par.Outputheight = SECOND_RES
     else:

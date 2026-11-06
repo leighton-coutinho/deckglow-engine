@@ -358,7 +358,41 @@ Expected findings: `stub_scene` warns "black at idle" (a flat-colour
 fixture), and `clean_lockup` shows no hit/sync response (info, not a
 failure).
 
-**Block 8 remains.** See *Remaining work*.
+**Block 8 — freeze `deckglow.scene-module/1`: done** (2026-11-06).
+
+After the four contract decisions (see *Decisions made*, 1–4 of 4), the
+contract is frozen at runtime API `2.0.0`:
+
+- `docs/SCENE_MODULE_SPEC.md` is marked **Frozen v1**, with §16.1 giving the
+  change rules (additions → `2.1.0`; removals or changed meaning → `3.0.0`
+  and `deckglow.scene-module/2`) and listing the decisions settled before it.
+- `docs/contract/deckglow.scene-module-1.json` is the machine-readable
+  contract: manifest fields and limits, slots, connectors, standard and slot
+  parameters, reserved names, all 16 lanes with range, kind, centring and
+  performer scaling, palette and brand tables, validation states.
+- `tools/check_contract.py` (plain Python, outside TD) fails if the spec's
+  §7/§9/§10 tables, `validate_static.py`, `build_scene_library.py`,
+  `build_performer_controls.py`, `diagnose_performer_controls.py` or any
+  module manifest disagree with that file. 85 checks pass; ten deliberate
+  mutations of the contract (swapped/renamed lanes, an extra menu token, a
+  newly required input, a lane no longer centred, a wrong performer mapping,
+  a bumped API, a dropped reserved name, a changed limit, a wrong parameter
+  style) are each caught.
+
+**Run `check_contract.py` after touching the spec, the validator or any
+runtime builder.** A failure means either the change is wrong or it is a
+contract change that must follow §16.1.
+
+The quarantine resolution test also gained `probe has content` (warn): the
+probe frame must show the module's own content — not black for base scenes,
+different from the input for the other slots — so a module that draws nothing
+cannot pass `resolution independent` trivially. **Verified in TD**
+(2026-11-06): every module shows content in the probe (kinetic mean 0.826;
+lockup, orbs and finish differ from their input by 0.332, 0.619 and 0.082;
+stub mean 0.418) and still passes `resolution independent`. orb_burst's
+0.000 resolution score is therefore real — soft, fraction-sized orbs match
+exactly — not an empty frame. All four first-party modules pass; stub warns
+only for black at idle. `check_contract.py`: 85 checks, 0 problems.
 
 ### Which file is current
 
@@ -385,6 +419,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
 | `build_tempo_fallback.py` | Adds `tempo_bpm` to `engine_in` and replaces the fixed 120 BPM fallback with `phase_keeper` (last usable tempo, no phase jump). Idempotent; keeps `test_bpm`. |
 | `diagnose_tempo_fallback.py` | Read-only. Prints the keeper's mode and held tempo, then measures `sync_phase` speed over 1 s and reports PASS if it matches. |
+| `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |
 | `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |
 | `build_scene_library.py` | Builds `/project1/scene_library`: discovery, quarantine (§15.2–15.4), JSON reports in `validation/`, per-version approvals in `library/approved.json`, and the gated `LoadApproved`. |
 | `build_projector_window.py` | Builds `/project1/projector`, the Window COMP that shows `OUTPUT` full-screen on a display. Never opens it; prints the open/close commands and the detected displays. |
@@ -536,13 +571,16 @@ From [SCENE_MODULE_SPEC.md §18](docs/SCENE_MODULE_SPEC.md):
    ~~Done~~ — verified, including the flash limiter and the `projector`
    Window COMP.
 7. ~~Quarantine validation and manifest discovery~~ — done (see *Current state*).
-8. **Freeze `deckglow.scene-module/1`** before accepting creator modules.
-   **In progress.** Settle the open decisions that touch the contract first:
+8. ~~Freeze `deckglow.scene-module/1`~~ — done (see *Current state*). The
+   decisions it needed:
    ~~fallback tempo~~ (done, verified), ~~`Paletteindex` overlap~~ (done: the
    runtime owns it, verified), ~~`toneAmount` semantics~~ (done: centred mood
    lanes, verified), ~~the 1080p licence question~~ (done: the contract is
-   resolution-independent, verified). **All four decisions are settled; the
-   freeze itself is next.**
+   resolution-independent, verified).
+
+All eight blocks of SCENE_MODULE_SPEC §18 are complete. Next, per §18, the
+creator pack format — designed now that four reference modules pass the same
+validator.
 
 Beyond that: the two-stack crossfade runtime, branding runtime, performer
 controls, show profiles and packaging (see V2_ARCHITECTURE blocks 5–9).

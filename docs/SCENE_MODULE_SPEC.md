@@ -1,8 +1,14 @@
 # Scene Module Specification
 
-Status: Draft v1  
+Status: Frozen v1 (2026-11-06)  
 Contract id: `deckglow.scene-module/1`  
-Target runtime: DeckGlow v2 TouchDesigner runtime
+Runtime API: `2.0.0`  
+Target runtime: DeckGlow v2 TouchDesigner runtime  
+Machine-readable form: [contract/deckglow.scene-module-1.json](contract/deckglow.scene-module-1.json)
+
+This contract is frozen. Changes follow section 16; the drift check
+(`touchDesigner/tools/check_contract.py`) fails if this document, the
+validator or the runtime disagree with the machine-readable form.
 
 This document defines the authoring contract for visual modules loaded by the
 hybrid runtime described in
@@ -764,6 +770,36 @@ Compatibility rules:
 Preset migration is by stable module id and parameter name. Renaming a creative
 parameter requires an explicit migration map in a future manifest revision.
 
+### 16.1 Freeze
+
+`deckglow.scene-module/1` with runtime API `2.0.0` was frozen on 2026-11-06,
+after the four reference modules passed the same validator. From here:
+
+- the frozen surface is everything in the machine-readable contract: manifest
+  fields and limits, slot types, connectors, standard and slot parameters,
+  reserved names, the 16 motion lanes with their ranges, centring and
+  performer scaling, palette and brand tables, and the validation states
+- a change that only adds (a new optional manifest field, a new motion lane,
+  a new optional connector) is a minor change: runtime API `2.1.0`, existing
+  modules keep loading unchanged
+- a change that removes, renames or changes the meaning of anything frozen is
+  a major change: runtime API `3.0.0` and a new contract id
+  (`deckglow.scene-module/2`), with the old one kept loadable during migration
+- every change updates the machine-readable contract and this document
+  together, and `check_contract.py` must pass
+
+Decisions settled before the freeze, so creators can rely on them:
+
+- performer controls are applied once, in the motion adapter (section 9.1);
+  `masterIntensity` scales every energy lane
+- `sync_phase` free-runs at the last usable tempo without a jump; 120 BPM
+  before any tempo is known (section 7)
+- the runtime chooses the palette; modules read it (section 8.1)
+- the mood lanes are centred: `0.5` is neutral (section 7)
+- the contract names no resolution (section 6.4)
+- `/output`, not modules, owns final safety, including the flash limit
+  (HYBRID_RUNTIME_ARCHITECTURE)
+
 ## 17. First-Party Reference Modules
 
 The first implementation should prove all four contracts with:
@@ -798,6 +834,9 @@ Implement and review the contract one block at a time:
 6. Build `projector_safe` and put final hardware safety after it in `/output`.
 7. Add quarantine validation and manifest-driven discovery.
 8. Freeze `deckglow.scene-module/1` before accepting creator modules.
+
+All eight blocks are complete; the contract was frozen on 2026-11-06
+(section 16.1).
 
 The pack format should be designed only after these four reference modules pass
 the same validator. This lets creator packs package a proven contract instead

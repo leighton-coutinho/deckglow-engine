@@ -3,7 +3,7 @@
   "id": "com.deckglow.stub",
   "version": "0.2.0",
   "type": "base_scene",
-  "started": "2026-11-06T17:57:57",
+  "started": "2026-11-06T18:06:28",
   "touchdesigner": "099.2025.32280",
   "static": {
     "folder": "C:/Users/ljlco/source/repos/CodexProjects/ReactiveVisualEngineCode/touchDesigner\\modules\\stub_scene",
@@ -211,7 +211,7 @@
     {
       "check": "dense cook",
       "status": "pass",
-      "detail": "avg 0.20 ms, peak 0.29 ms (warn above 4)"
+      "detail": "avg 0.19 ms, peak 0.30 ms (warn above 4)"
     },
     {
       "check": "dense bounded",
@@ -234,6 +234,11 @@
       "detail": "not applicable to base_scene"
     },
     {
+      "check": "probe has content",
+      "status": "pass",
+      "detail": "mean 0.418 in the probe state"
+    },
+    {
       "check": "second resolution",
       "status": "pass",
       "detail": "640x360 for a 640x360 request"
@@ -252,12 +257,12 @@
     }
   ],
   "performance": {
-    "cook_ms_avg": 0.204,
-    "cook_ms_peak": 0.292,
+    "cook_ms_avg": 0.194,
+    "cook_ms_peak": 0.303,
     "gpu_ms_avg": 0.012,
     "project_fps": 60.0,
     "resolution": "1280x720"
   },
   "result": "warn",
-  "finished": "2026-11-06T17:58:01"
+  "finished": "2026-11-06T18:06:32"
 }
