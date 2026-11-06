@@ -61,3 +61,9 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+###############################################################################
+# DeckGlow creator packs: pack.json stores sha256 hashes of these exact bytes,
+# so git must never convert their line endings (PACK_FORMAT_SPEC s3).
+###############################################################################
+touchDesigner/examples/packs/** -text
