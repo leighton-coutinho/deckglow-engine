@@ -62,9 +62,16 @@ def Apply():
     name, i = Selected()
     out.clear()
     out.appendRow(['role', 'r', 'g', 'b', 'a'])
+    src = parent()
+    override = bool(src.par.Backgroundoverride.eval())
     for role in ROLES:
-        cell = lib[i + 1, role] if name is not None else None
-        r, g, b = _rgb(cell.val if cell is not None else '', role)
+        if role == 'background' and override:
+            # the frontend's background colour (setBackground) beats the palette's
+            r, g, b = (max(0.0, min(1.0, float(getattr(src.par, 'Backgroundcolor' + c).eval())))
+                       for c in 'rgb')
+        else:
+            cell = lib[i + 1, role] if name is not None else None
+            r, g, b = _rgb(cell.val if cell is not None else '', role)
         out.appendRow([role, '%.4f' % r, '%.4f' % g, '%.4f' % b, '1.0'])
     return name
 '''
@@ -83,11 +90,15 @@ def onTableChange(dat):
 
 old = ROOT.op('palette_source')
 rows, index = DEFAULT_LIBRARY, 0
+bg_override, bg_color = 0, (0.02, 0.02, 0.03)
 if old is not None:
     lib_old = old.op('library')
     if lib_old is not None and lib_old.numRows > 1:
         rows = [[c.val for c in lib_old.row(r)] for r in range(lib_old.numRows)]
     index = int(old.par.Paletteindex.eval())
+    if getattr(old.par, 'Backgroundoverride', None) is not None:
+        bg_override = int(old.par.Backgroundoverride.eval())
+        bg_color = tuple(float(getattr(old.par, 'Backgroundcolor' + c).eval()) for c in 'rgb')
     old.destroy()
 o = ROOT.op('PALETTE')
 if o is not None:
@@ -134,6 +145,16 @@ p.clampMin = True
 p.normMin, p.normMax = 0, max(1, len(rows) - 2)
 p.val = index
 
+# Background colour override (FRONTEND_MESSAGE_CONTRACT setBackground): the
+# palette's background role - what an empty or switched-off base slot shows.
+p = page.appendToggle('Backgroundoverride', label='Override Background')[0]
+p.default = 0
+p.val = bg_override
+pg = page.appendRGB('Backgroundcolor', label='Background Colour')
+for par, v in zip(pg, bg_color):
+    par.default = 0
+    par.val = v
+
 lib = src.create(tableDAT, 'library')
 lib.nodeX, lib.nodeY = 0, 0
 lib.clear()
@@ -150,7 +171,7 @@ logic.text = PALETTE_LOGIC
 pe = src.create(parameterexecuteDAT, 'index_parexec')
 pe.nodeX, pe.nodeY = 300, -300
 pe.par.op = src
-pe.par.pars = 'Paletteindex'
+pe.par.pars = 'Paletteindex Backgroundoverride Backgroundcolorr Backgroundcolorg Backgroundcolorb'
 pe.par.custom = True
 pe.par.builtin = False
 pe.par.valuechange = True
@@ -177,4 +198,5 @@ print('palette source built: %s -> %s' % (src.path, term.path))
 print('  library  :', ', '.join('%d %s' % (i, lib[i + 1, 'name'].val) for i in range(lib.numRows - 1)))
 print('  selected : %d (%s)' % (src.par.Paletteindex.eval(), name))
 print('  from packs:', ', '.join(added) if added else 'none new')
+print('  background:', 'override %s' % (bg_color,) if bg_override else "the palette's own")
 print('next: run build_module_host.py so module_host and hit_host get PALETTE')

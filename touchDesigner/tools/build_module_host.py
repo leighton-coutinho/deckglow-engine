@@ -224,10 +224,13 @@ def build_host(name, x, y, default_type, image_src=None, extra=None):
         o = host.create(kind, nm)
         o.nodeX, o.nodeY = 0, -i * 200
 
+    # The fallback image. For base_scene it is what an empty or switched-off
+    # slot shows: the palette's background role (which the frontend can
+    # override with setBackground), black when no palette is wired.
     black = host.create(constantTOP, 'black')
-    black.par.colorr = 0
-    black.par.colorg = 0
-    black.par.colorb = 0
+    for comp, col in (('r', 'colorr'), ('g', 'colorg'), ('b', 'colorb')):
+        cell = "op('in2_palette')['background', '%s']" % comp
+        getattr(black.par, col).expr = "float(%s.val) if %s is not None else 0" % (cell, cell)
     black.par.alpha = 1
     black.nodeX, black.nodeY = 400, -1200
 

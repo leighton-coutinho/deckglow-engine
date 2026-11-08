@@ -1,0 +1,30 @@
+{
+  "schema": "deckglow.scene-module/1",
+  "id": "com.deckglow.solid_background",
+  "type": "base_scene",
+  "displayName": "Solid Background",
+  "author": "DeckGlow",
+  "version": "1.0.0",
+  "runtimeApi": ">=2.0.0 <3.0.0",
+  "entry": "module.tox",
+  "thumbnail": "thumbnail.png",
+  "performanceTier": "light",
+  "tags": ["background", "minimal", "palette"],
+  "controls": [
+    {
+      "parameter": "Breathe",
+      "label": "Beat Pulse",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.15,
+      "group": "Motion"
+    }
+  ],
+  "description": "The runtime palette's background colour (which the app's background colour overrides), pulsing toward the palette's primary colour on the beat. Breathe 0 makes it still.",
+  "capabilities": {
+    "usesPython": false,
+    "usesAudioFileIn": false,
+    "supportsAlphaAssets": false
+  }
+}

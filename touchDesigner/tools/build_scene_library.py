@@ -846,8 +846,12 @@ def IsApproved(key):
 
 
 def LoadApproved(host, key):
-    """The gated path into a host: only approved, current-version modules."""
-    Scan(quiet=True)
+    """The gated path into a host: only approved, current-version modules.
+    Uses the last Scan, not a new one: Scan runs toeexpand on every module and
+    would stall the picture for a second or more mid-show. Rescan after
+    installing or changing a module (the frontend's getLibrary rescan)."""
+    if not parent().fetch('static', {}):
+        Scan(quiet=True)
     folder = _folder_for(key)
     if folder is None or not IsApproved(key):
         print('refused: %%s is not approved for its current version' %% key)

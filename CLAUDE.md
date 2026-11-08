@@ -452,6 +452,70 @@ zip); install, refused reinstall, upgrade, refused downgrade and `--force`,
 untouched-on-failure, list, remove; library discovery, approval and
 `LoadApproved` from `Packs/`.
 
+**Desktop app — step 1 (runtime side): done and verified** (2026-11-07).
+The owner chose a **desktop app** (planned: Electron + TypeScript, an
+installer and setup wizard published from this repo). Step 1 is the runtime
+half, independent of the app framework.
+
+Verified against the running TouchDesigner by Claude with
+`bridge_client.py demo`: **18 of 18 steps** — orbs and stripes off/on, the
+background override (stripes and orbs off → a purple frame with only the
+name), back to the palette, palette ember, name, master, max brightness, demo
+mode at 128 BPM, two orb controls, the three refusals (unapproved, wrong slot,
+strobe without the confirm phrase), the status stream (≈60 fps, 16 lanes,
+limiter state) and `applyShow` restoring the starting show with no problems.
+Both preview JPEGs are 480×270. Solid Background passed quarantine and is
+approved. Two bugs found on the first run: the client skipped the `getState`
+reply (it ignored every `state` message; broadcasts carry no `id`, so it now
+matches on id only), and the preview came out 256×256 then 1280×720 — nothing
+views the preview TOP, so `saveByteArray` read a stale texture; it is now a
+Resolution TOP force-cooked before each save (lazy cooking again). A
+background step failing with "palette_source has no background override"
+means `build_palette_source.py` (and then `build_module_host.py` + `Load` on
+each host) were not re-run.
+
+- [docs/FRONTEND_MESSAGE_CONTRACT.md](docs/FRONTEND_MESSAGE_CONTRACT.md) —
+  `deckglow.control/1` over WebSocket `ws://127.0.0.1:9980/`, localhost only,
+  token from `touchDesigner/bridge_token.txt` (gitignored, created if
+  missing). Named, field-validated messages (`setSlotEnabled`,
+  `setSlotModule` gated by approval, `setControl` against declared controls,
+  `setPerformer`, `setPalette`, `setBackground`, `setBrand`, `setOutput` —
+  flash limit off needs a confirm phrase — `setEngine` live/demo + BPM,
+  `projector`, `applyShow`, `subscribe` to status and JPEG preview).
+  Show files are `deckglow.show/1`, the same object as the live state.
+- `tools/bridge_protocol.py` — the pure-Python protocol (auth, validation,
+  dispatch, `applyShow` ordering with output last), no TD imports, embedded in
+  the bridge. Tested outside TD with a fake adapter: non-local refused,
+  nothing before `hello`, three bad tokens close, 25 bad requests refused with
+  the right code and none reaching the runtime, broadcasts to all clients.
+- `tools/build_control_bridge.py` — `/project1/control_bridge`: Web Server
+  DAT, the adapter onto existing operators (host `Moduleactive`/`Intensity`,
+  `LoadApproved`, performer_controls, palette_source, brand_table, output,
+  engine_in test generators, projector), status 4×/s and preview via
+  `saveByteArray('.jpg')` from an Execute DAT. Slot parameters a frontend may
+  set come from the frozen contract file.
+- `tools/bridge_client.py` — standard-library WebSocket client (loopback-tested:
+  handshake, masking, ping/pong, 16/64-bit lengths, binary). `demo` walks the
+  app's switches, saves preview JPEGs and restores the starting show. **Claude
+  can run it directly against a running TouchDesigner** — no pasting needed.
+- **Background colour:** `palette_source` gains `Backgroundoverride` +
+  `Backgroundcolor`, written into the palette's `background` role; every
+  host's fallback (`black`) now shows that role, so an empty or switched-off
+  base slot shows the background colour (black without a palette).
+- **`solid_background`** (`tools/build_solid_background.py`,
+  `com.deckglow.solid_background`): the palette background pulsing toward the
+  palette primary on the beat, `bg + (primary − bg) × Breathe × sync_level`
+  (`Breathe`, labelled Beat Pulse, default 0.15); exactly the background at
+  idle. No Python — passes the creator rule. The first build scaled brightness
+  with `body_level` and **failed quarantine's Sync test** (0 of 11 samples
+  changed): a base scene must move with the beat lanes, and dimming the test
+  palette's near-black background barely changes a pixel. A still colour needs
+  no module — an empty or off base slot shows the background.
+- **Fixed on the way:** `LoadApproved` used to `Scan()` first, which runs
+  toeexpand on every module and would stall the picture for seconds on every
+  live module switch. It now uses the last scan; `getLibrary` takes
+  `rescan: true` for after installs.
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -477,6 +541,10 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
 | `build_tempo_fallback.py` | Adds `tempo_bpm` to `engine_in` and replaces the fixed 120 BPM fallback with `phase_keeper` (last usable tempo, no phase jump). Idempotent; keeps `test_bpm`. |
 | `diagnose_tempo_fallback.py` | Read-only. Prints the keeper's mode and held tempo, then measures `sync_phase` speed over 1 s and reports PASS if it matches. |
+| `build_control_bridge.py` | Builds `/project1/control_bridge`, the `deckglow.control/1` WebSocket server the desktop app talks to. Run after the stack, palette, brand, library and projector builders. |
+| `bridge_protocol.py` | Plain Python: the protocol logic, embedded in the bridge, tested outside TD with a fake adapter. |
+| `bridge_client.py` | Standard-library WebSocket client, **outside** TD: `state`, `send '<json>'`, `preview out.jpg`, `demo`. |
+| `build_solid_background.py` | Builds and exports `modules/solid_background/` (palette background, pulsing toward primary on the beat). |
 | `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. |
 | `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |
 | `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |

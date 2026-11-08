@@ -367,3 +367,6 @@ touchDesigner/*.[0-9][0-9].toe
 
 # DeckGlow: installed creator packs are per-machine state (pack_tool.py install)
 touchDesigner/Packs/
+# DeckGlow control bridge: per-machine session token and test previews
+touchDesigner/bridge_token.txt
+touchDesigner/bridge_preview_*.jpg
