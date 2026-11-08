@@ -14,6 +14,11 @@ and library/approved.json (approval per id and version, as the scene
 library does), and declares controls from the frozen contract plus each
 manifest, as build_control_bridge.py does.
 
+Library management works on copies: approvals start from library/approved.json
+and validation reports are read from validation/, but approving, revoking and
+(simulated, ~1.5 s) validation only change the mock's memory - it never writes
+to the runtime's files.
+
 Preview frames are PNGs (browsers decode them like the JPEGs TouchDesigner
 sends): the base module's thumbnail while the base slot is on and filled,
 otherwise a flat frame of the background colour - so the background switch
@@ -45,6 +50,7 @@ sys.path.insert(0, HERE)
 import bridge_protocol as bp  # noqa: E402
 
 TOKEN_FILE = os.path.join(TD, 'bridge_token.txt')
+PACKS_DIR = os.path.join(TD, 'Packs')          # --packs <dir> for a test install folder
 CONTRACT = os.path.join(ROOT, 'docs', 'contract', 'deckglow.scene-module-1.json')
 GUID = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 PALETTES = [  # build_palette_source.py's default library
@@ -69,6 +75,21 @@ def png(width, height, rgb):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
     return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
             + chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
+
+
+def trim_report(rep):
+    """A quarantine report as the bridge sends it (build_control_bridge._trim_report)."""
+    if not rep:
+        return None
+    checks = [{'stage': 'static', 'check': c.get('check'), 'status': c.get('status'), 'detail': c.get('detail', '')}
+              for c in ((rep.get('static') or {}).get('checks') or [])]
+    for stage in ('interface', 'runtime', 'admission'):
+        checks += [{'stage': stage, 'check': c.get('check'), 'status': c.get('status'), 'detail': c.get('detail', '')}
+                   for c in rep.get(stage) or []]
+    return {'module': rep.get('id'), 'version': rep.get('version'), 'type': rep.get('type'),
+            'result': rep.get('result'), 'started': rep.get('started'), 'finished': rep.get('finished'),
+            'touchdesigner': rep.get('touchdesigner'), 'performance': rep.get('performance') or {},
+            'checks': checks}
 
 
 def slot_params():
@@ -99,7 +120,11 @@ class FakeRuntime(object):
     def __init__(self, server):
         self.server = server
         self.slot_params = slot_params()
+        self.approvals = self._read_approvals()
+        self.reports = {}                    # module id -> simulated report (memory only)
+        self.validating = None               # {'module', 'until'}
         self.modules = self._scan()
+        self.palettes = self._palettes()
         self.palette_index = 0
         self.bg = None
         self.slots = {}
@@ -113,18 +138,29 @@ class FakeRuntime(object):
         self.projector_state = 'closed'
 
     # ------------------------------------------------------------ library
-    def _scan(self):
-        approved = {}
+    @staticmethod
+    def _read_approvals():
         try:
             with open(os.path.join(TD, 'library', 'approved.json'), 'r', encoding='utf-8') as f:
-                approved = json.load(f).get('approved', {})
+                return json.load(f).get('approved', {})
         except (OSError, ValueError):
-            pass
+            return {}
+
+    def _disk_report(self, key):
+        try:
+            with open(os.path.join(TD, 'validation', key.replace('/', '__') + '.json'), 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def _scan(self):
         mods = {}
-        roots = [(os.path.join(TD, 'modules'), 'com.deckglow')]
-        packs = os.path.join(TD, 'Packs')
+        roots = [(os.path.join(TD, 'modules'), 'first-party')]
+        packs = PACKS_DIR
         if os.path.isdir(packs):
-            roots += [(os.path.join(packs, p), p) for p in sorted(os.listdir(packs))]
+            # installed packs keep their modules in Packs/<pack id>/modules/<folder>/
+            roots += [(os.path.join(packs, p, 'modules'), p) for p in sorted(os.listdir(packs))
+                      if os.path.isfile(os.path.join(packs, p, 'installed.json'))]
         for base, source in roots:
             if not os.path.isdir(base):
                 continue
@@ -135,22 +171,47 @@ class FakeRuntime(object):
                         man = json.load(f)
                 except (OSError, ValueError):
                     continue
-                a = approved.get(man.get('id'), {})
-                ok = a.get('version') == man.get('version') and a.get('result') == 'pass'
+                key = folder if source == 'first-party' else '%s/%s' % (source, folder)
+                rep = self.reports.get(man['id']) or self._disk_report(key)
+                q = rep.get('result') if rep and rep.get('version') == man.get('version') else 'not run'
+                a = self.approvals.get(man.get('id'))
+                state = 'no' if not a else 'yes' if a.get('version') == man.get('version') else 'stale (%s)' % a.get('version')
+                if state == 'yes' and q == 'fail':
+                    state = 'blocked (fails now)'
                 mods[man['id']] = {
                     'id': man['id'], 'type': man.get('type'), 'version': man.get('version'),
-                    'displayName': man.get('displayName', folder), 'source': source,
-                    'static': 'pass', 'quarantine': a.get('result', 'not run') if a else 'not run',
-                    'approved': 'yes' if ok else ('stale' if a else 'no'),
+                    'displayName': man.get('displayName', folder), 'source': source, 'folder': key,
+                    'static': 'pass', 'quarantine': q, 'approved': state,
                     'thumbnail': os.path.join(base, folder, man.get('thumbnail', 'thumbnail.png')).replace('\\', '/'),
                     'controls': man.get('controls', [])}
         return mods
+
+    def _palettes(self):
+        """The default library plus installed packs' palettes as '<pack id>/<name>'
+        (palette_logic.RefreshPacks in TouchDesigner)."""
+        out = list(PALETTES)
+        if os.path.isdir(PACKS_DIR):
+            for pid in sorted(os.listdir(PACKS_DIR)):
+                try:
+                    with open(os.path.join(PACKS_DIR, pid, 'pack.json'), 'r', encoding='utf-8') as f:
+                        rels = json.load(f).get('palettes', [])
+                    for rel in rels:
+                        with open(os.path.join(PACKS_DIR, pid, *rel.split('/')), 'r', encoding='utf-8') as f:
+                            pal = json.load(f)
+                        out.append(('%s/%s' % (pid, pal['name']), tuple(pal['background'][:3]), tuple(pal['primary'][:3])))
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+        return out
 
     def library(self, rescan=False):
         if rescan:
             time.sleep(0.5)                       # the real rescan takes seconds
             self.modules = self._scan()
-        return {'modules': list(self.modules.values()), 'palettes': [p[0] for p in PALETTES]}
+            selected = self.palettes[self.palette_index][0]
+            self.palettes = self._palettes()
+            names = [p[0] for p in self.palettes]
+            self.palette_index = names.index(selected) if selected in names else self.palette_index % len(names)
+        return {'modules': list(self.modules.values()), 'palettes': [p[0] for p in self.palettes]}
 
     def controls(self, slot):
         decls = dict(self.slot_params.get(slot, {}))
@@ -162,7 +223,7 @@ class FakeRuntime(object):
 
     # --------------------------------------------------------------- reads
     def state(self):
-        name = PALETTES[self.palette_index][0]
+        name = self.palettes[self.palette_index][0]
         return {'schema': bp.SHOW,
                 'slots': json.loads(json.dumps(self.slots)),
                 'performer': dict(self.perf),
@@ -171,7 +232,7 @@ class FakeRuntime(object):
                 'brand': dict(self.brand_rows), 'output': dict(self.out), 'engine': dict(self.eng)}
 
     def background_rgb(self):
-        return self.bg or PALETTES[self.palette_index][1]
+        return self.bg or self.palettes[self.palette_index][1]
 
     # -------------------------------------------------------------- writes
     def slot_enabled(self, slot, on):
@@ -204,7 +265,7 @@ class FakeRuntime(object):
         self.perf[name] = round(v, 4)
 
     def palette(self, index=None, name=None):
-        names = [p[0] for p in PALETTES]
+        names = [p[0] for p in self.palettes]
         if name is not None:
             if name not in names:
                 raise bp.BridgeError('bad_field', 'no palette %r (have: %s)' % (name, ', '.join(names)))
@@ -229,6 +290,63 @@ class FakeRuntime(object):
 
     def projector(self, action):
         self.projector_state = 'closed' if action == 'close' else action
+
+    # ---------------------------------------------------- library management
+    def _module(self, mid):
+        m = self.modules.get(mid)
+        if m is None:
+            raise bp.BridgeError('unknown_module', '%s is not in the library - install it, then rescan' % mid)
+        return m
+
+    def validate(self, mid):
+        self._module(mid)
+        if self.validating is not None:
+            raise bp.BridgeError('busy', 'a validation is already running - wait for it to finish')
+        self.validating = {'module': mid, 'until': time.time() + 1.5}
+        self.server.send(self.server.proto.notify({'type': 'validation', 'module': mid, 'phase': 'running'}))
+
+    def finish_validation(self):
+        mid = self.validating['module']
+        self.validating = None
+        m = self.modules[mid]
+        disk = self._disk_report(m['folder'])
+        if disk and disk.get('version') == m['version']:
+            rep = trim_report(disk)
+        else:
+            rep = {'module': mid, 'version': m['version'], 'type': m['type'], 'result': 'pass',
+                   'started': time.strftime('%Y-%m-%dT%H:%M:%S'), 'finished': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                   'touchdesigner': 'mock', 'performance': {'cook_ms_avg': 0.3, 'cook_ms_peak': 0.5},
+                   'checks': [{'stage': 'admission', 'check': 'mock', 'status': 'pass',
+                               'detail': 'simulated by mock_bridge.py - validate in TouchDesigner for real'}]}
+        rep['version'] = m['version']
+        self.reports[mid] = rep
+        self.modules = self._scan()
+        return mid, rep
+
+    def report(self, mid):
+        m = self._module(mid)
+        rep = self.reports.get(mid)
+        if rep is None:
+            disk = self._disk_report(m['folder'])
+            rep = trim_report(disk) if disk else None
+        return rep
+
+    def approve(self, mid, note):
+        m = self._module(mid)
+        rep = self.report(mid)
+        if rep is None or rep.get('version') != m['version']:
+            raise bp.BridgeError('not_validated', '%s %s has not been validated - validate it first' % (mid, m['version']))
+        if rep.get('result') == 'fail':
+            raise bp.BridgeError('validation_failed', '%s failed validation and cannot be approved' % mid)
+        self.approvals[mid] = {'version': m['version'], 'folder': m['folder'], 'result': rep['result'],
+                               'validated': rep.get('finished'), 'approved': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                               'note': note}
+        self.modules = self._scan()
+
+    def revoke(self, mid):
+        self._module(mid)
+        self.approvals.pop(mid, None)
+        self.modules = self._scan()
 
     def close_client(self, client):
         self.server.drop(client)
@@ -310,6 +428,12 @@ class Server(socketserver.ThreadingTCPServer):
             fps = 1.0 / max(1e-6, now - last)
             last = now
             with self.lock:
+                v = self.rt.validating
+                if v is not None and now >= v['until']:
+                    mid, rep = self.rt.finish_validation()
+                    self.send(self.proto.notify({'type': 'validation', 'module': mid, 'phase': 'done',
+                                                 'result': rep['result'], 'report': rep}))
+                    self.send(self.proto.notify({'type': 'libraryChanged', 'module': mid}))
                 if frame % 15 == 0:
                     subs = [c for c, on in self.proto.subscribers('status') if on]
                     if subs:
@@ -451,6 +575,9 @@ def main(argv):
     port = 9980
     if '--port' in argv:
         port = int(argv[argv.index('--port') + 1])
+    if '--packs' in argv:
+        global PACKS_DIR
+        PACKS_DIR = os.path.abspath(argv[argv.index('--packs') + 1])
     # Windows lets this bind 127.0.0.1:<port> even while TouchDesigner's bridge holds
     # 0.0.0.0:<port>; loopback clients then reach whichever is more specific, silently
     # testing the mock instead of the runtime. So refuse when anything already answers.
@@ -467,7 +594,7 @@ def main(argv):
         print('mock_bridge: cannot use port %d (%s); use --port for another one.' % (port, e.strerror or e))
         return 1
     print('mock_bridge: ws://127.0.0.1:%d/  (token from %s)' % (port, TOKEN_FILE))
-    print('mock_bridge: %d modules, %d approved' % (
+    print('mock_bridge: %d modules, %d approved (approvals and validation stay in memory)' % (
         len(srv.rt.modules), sum(1 for m in srv.rt.modules.values() if m['approved'] == 'yes')))
     sys.stdout.flush()
     try:

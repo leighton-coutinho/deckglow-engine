@@ -4,7 +4,13 @@
 // main process screenshots the window and exits 0 (pass) or 1 (fail).
 
 import type { BridgeClient } from './bridge.js';
-import type { Library, ShowState } from '../shared/api.js';
+import type { DeckglowApi, Library, ShowState } from '../shared/api.js';
+
+export interface PackSmoke {
+  api: DeckglowApi;
+  pack: string | null;
+  panel: { load: (rescan?: boolean) => Promise<void>; loadPacks: () => Promise<void> };
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,7 +40,7 @@ function setSwitch(sel: string, on: boolean): void {
   if (box.checked !== on) box.click();
 }
 
-export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: () => Library): Promise<{ ok: boolean; steps: string[] }> {
+export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: () => Library, packs?: PackSmoke): Promise<{ ok: boolean; steps: string[] }> {
   const steps: string[] = [];
   let ok = true;
   const st = () => bridge.state as ShowState;
@@ -115,6 +121,39 @@ export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: 
     await waitFor('restored', () => JSON.stringify(st().performer) === JSON.stringify(start.performer)
       && st().brand.displayName === start.brand.displayName && JSON.stringify(st().background) === JSON.stringify(start.background));
   });
+  if (packs?.pack) {
+    // the real IPC path: main process -> pack_tool.py --json (DECKGLOW_PACKS for a test folder)
+    const file = packs.pack;
+    let id = '';
+    let moduleIds: string[] = [];
+    await step('pack: checks pass (inspectPack)', async () => {
+      const r = await packs.api.inspectPack(file);
+      if (!r.ok || !r.pack) throw new Error(r.message ?? 'verify failed');
+      id = r.pack.id;
+      moduleIds = r.pack.modules.map((m) => m.id);
+    });
+    await step('pack: unpicked files are refused', async () => {
+      const r = await packs.api.inspectPack(file + '.other').then(() => 'accepted', () => 'refused');
+      if (r !== 'refused') throw new Error('main process inspected a file nobody picked');
+    });
+    await step('pack: installs (installPack)', async () => {
+      const r = await packs.api.installPack(file, true);
+      if (!r.ok) throw new Error(r.message ?? 'install failed');
+    });
+    await step('pack: listed, and its modules join the library on rescan', async () => {
+      const l = await packs.api.listPacks();
+      if (!l.packs?.some((p) => p.id === id)) throw new Error('not listed');
+      await packs.panel.load(true);
+      if (!moduleIds.every((m) => lib().modules.some((x) => x.id === m))) throw new Error('modules missing after rescan');
+    });
+    await step('pack: removes, and leaves the library', async () => {
+      const r = await packs.api.removePack(id);
+      if (!r.ok) throw new Error(r.message ?? 'remove failed');
+      await packs.panel.load(true);
+      await packs.panel.loadPacks();
+      if (moduleIds.some((m) => lib().modules.some((x) => x.id === m))) throw new Error('modules still listed');
+    });
+  }
   await sleep(1200);                                // a fresh preview frame for the screenshot
   return { ok, steps };
 }

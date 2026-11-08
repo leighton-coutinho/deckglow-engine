@@ -74,6 +74,61 @@ def Apply():
             r, g, b = _rgb(cell.val if cell is not None else '', role)
         out.appendRow([role, '%.4f' % r, '%.4f' % g, '%.4f' % b, '1.0'])
     return name
+
+
+import json
+import os
+import re
+PACK_ROW = re.compile(r'^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_-]*)+/')
+
+
+def _pack_rows():
+    """Palettes shipped in installed creator packs (PACK_FORMAT_SPEC s4), named
+    '<pack id>/<name>'. They were checked when the pack was installed; anything
+    unreadable here is skipped."""
+    packs_dir = os.path.join(project.folder, 'Packs')
+    rows = []
+    if not os.path.isdir(packs_dir):
+        return rows
+    for pid in sorted(os.listdir(packs_dir)):
+        try:
+            with open(os.path.join(packs_dir, pid, 'pack.json'), 'r', encoding='utf-8') as f:
+                pal_paths = json.load(f).get('palettes', [])
+        except (OSError, ValueError):
+            continue
+        for rel in pal_paths:
+            try:
+                with open(os.path.join(packs_dir, pid, *rel.split('/')), 'r', encoding='utf-8') as f:
+                    pal = json.load(f)
+                rows.append(['%s/%s' % (pid, pal['name'])] + [
+                    ','.join('%.4f' % float(c) for c in pal[k][:3]) for k in ROLES])
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+    return rows
+
+
+def RefreshPacks():
+    """Re-reads pack palettes: adds new ones, drops those of removed packs, and
+    keeps the selected palette selected (by name) so the picture never jumps.
+    Rows without a pack prefix are the show's own and are never touched.
+    Returns (added, removed)."""
+    lib = parent().op('library')
+    selected, _ = Selected()
+    old = [[c.val for c in lib.row(r)] for r in range(lib.numRows)]
+    head, own = old[:1], [r for r in old[1:] if not PACK_ROW.match(r[0])]
+    before = {r[0] for r in old[1:] if PACK_ROW.match(r[0])}
+    packs = _pack_rows()
+    after = {r[0] for r in packs}
+    rows = head + own + packs
+    if rows != old:
+        lib.clear()
+        for r in rows:
+            lib.appendRow(r)
+    names = [r[0] for r in rows[1:]]
+    if selected in names:
+        parent().par.Paletteindex = names.index(selected)
+    Apply()
+    return sorted(after - before), sorted(before - after)
 '''
 
 PAREXEC = r'''
@@ -104,34 +159,9 @@ o = ROOT.op('PALETTE')
 if o is not None:
     o.destroy()
 
-# Palettes shipped in installed creator packs (PACK_FORMAT_SPEC s4) join the
-# library under '<pack id>/<name>'. They were checked when the pack was
-# installed; anything unreadable here is skipped. The runtime still chooses.
-import json
-import os
-packs_dir = os.path.join(project.folder, 'Packs')
-have = {r[0] for r in rows}
-added = []
-if os.path.isdir(packs_dir):
-    for pid in sorted(os.listdir(packs_dir)):
-        try:
-            with open(os.path.join(packs_dir, pid, 'pack.json'), 'r', encoding='utf-8') as f:
-                pal_paths = json.load(f).get('palettes', [])
-        except (OSError, ValueError):
-            continue
-        for rel in pal_paths:
-            try:
-                with open(os.path.join(packs_dir, pid, *rel.split('/')), 'r', encoding='utf-8') as f:
-                    pal = json.load(f)
-                name = '%s/%s' % (pid, pal['name'])
-                row = [name] + [','.join('%.4f' % float(c) for c in pal[k][:3])
-                                for k in ('background', 'primary', 'secondary', 'accent')]
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-            if name not in have:
-                rows.append(row)
-                have.add(name)
-                added.append(name)
+# Palettes of installed creator packs join the library under '<pack id>/<name>'
+# through palette_logic.RefreshPacks() below - also called by the control
+# bridge after a pack is installed or removed (getLibrary rescan).
 
 src = ROOT.create(baseCOMP, 'palette_source')
 src.nodeX, src.nodeY = 4800, -1800
@@ -193,10 +223,12 @@ term = ROOT.create(nullDAT, 'PALETTE')
 term.nodeX, term.nodeY = 5600, -1800
 term.inputConnectors[0].connect(src.outputConnectors[0])
 
-name = logic.module.Apply()
+added, removed = logic.module.RefreshPacks()
+name = logic.module.Selected()[0]
 print('palette source built: %s -> %s' % (src.path, term.path))
 print('  library  :', ', '.join('%d %s' % (i, lib[i + 1, 'name'].val) for i in range(lib.numRows - 1)))
 print('  selected : %d (%s)' % (src.par.Paletteindex.eval(), name))
-print('  from packs:', ', '.join(added) if added else 'none new')
+print('  from packs:', ', '.join(added) if added else 'none new',
+      ('(dropped: %s)' % ', '.join(removed)) if removed else '')
 print('  background:', 'override %s' % (bg_color,) if bg_override else "the palette's own")
 print('next: run build_module_host.py so module_host and hit_host get PALETTE')

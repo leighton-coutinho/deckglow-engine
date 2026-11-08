@@ -1,6 +1,6 @@
 # Frontend Message Contract
 
-Status: Draft v1 (2026-11-06)  
+Status: Draft v1 (2026-11-06; library management added 2026-11-07, a minor change under section 6)  
 Protocol id: `deckglow.control/1`  
 Show format: `deckglow.show/1`  
 Runtime: `/project1/control_bridge` (`touchDesigner/tools/build_control_bridge.py`)  
@@ -68,6 +68,17 @@ Slots are `base_scene`, `hit_fx`, `brand_overlay`, `finish_fx`.
 | `projector` | `action`: `open`, `perform` or `close` | The output window (`perform` = Perform Mode). |
 | `applyShow` | `show` (a `deckglow.show/1` object) | Applies a whole saved show, field by field, in the order of section 5. Fields it cannot apply are reported, the rest still apply. |
 | `subscribe` | optional `status` (bool), optional `preview` (`{"fps": 1..30, "width": 160..960}` or `false`) | Starts or stops `status` messages (4 per second) and preview frames. |
+| `validateModule` | `module` (id) | Runs the module's current version through quarantine (SCENE_MODULE_SPEC s15; about 10 s, the picture may stutter - before the set, not during it). Acks at once; the result arrives as `validation` messages. One at a time: `busy` while one runs. |
+| `getReport` | `module` (id) | Replies `{"type": "report", "module", "report"}`: the last quarantine report (`version`, `result` pass/warn/fail, `finished`, `performance`, and `checks` - each `stage`, `check`, `status`, `detail`), or `null`. |
+| `approveModule` | `module` (id), optional `note` (≤200 chars) | Approves the current version. Refused `not_validated` without a report for this version, `validation_failed` if it failed. Never implied by installing or validating. |
+| `revokeModule` | `module` (id) | Removes the approval. A layer already showing the module keeps it until switched. |
+
+`getLibrary` with `rescan: true` also re-reads installed packs' palettes
+(`<pack id>/<name>` in the palette list), keeping the selected palette by name.
+
+Installing and removing packs is not a bridge message: the desktop app runs
+`touchDesigner/tools/pack_tool.py --json` itself, on a file the person chose,
+then sends `getLibrary` with `rescan: true`.
 
 ## 4. Runtime → frontend
 
@@ -78,10 +89,12 @@ Slots are `base_scene`, `hit_fx`, `brand_overlay`, `finish_fx`.
 | `state` | after every change, to all clients | the show state (section 5) |
 | `status` | 4 per second, to subscribers | `fps`; per slot `status` (the host's `Status`), `cookMs`; `limiter` (`held`, `transitions`, `gain`); `lanes` (all 16 motion lanes) |
 | binary frame | at the subscribed rate | one JPEG of `OUTPUT`, scaled to the subscribed width |
+| `validation` | to all clients, when a validation starts and ends | `module`, `phase` (`running` or `done`); when done also `result` and `report` (as `getReport`) |
+| `libraryChanged` | to all clients, after an approval, revocation, finished validation or rescan | `module` (or `null`): send `getLibrary` (no rescan) to refresh |
 
 Error codes: `bad_json`, `unauthenticated`, `unknown_type`, `bad_field`,
 `not_approved`, `wrong_slot`, `not_loaded`, `unknown_control`, `confirm_required`,
-`failed`.
+`unknown_module`, `busy`, `not_validated`, `validation_failed`, `failed`.
 
 ## 5. Show state — `deckglow.show/1`
 

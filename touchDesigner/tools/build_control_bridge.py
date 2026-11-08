@@ -141,6 +141,9 @@ def Frame():
             msg = {'type': 'status', 'status': Status()}
             _send([(c, msg) for c in subs])
 
+    if _g.get('validating') is not None:
+        _watch_validation(p)
+
     viewers = p.subscribers('preview')
     if viewers:
         prev = parent().op('preview')
@@ -170,6 +173,40 @@ def Frame():
                     _server().webSocketSendBinary(c, data)
                 except Exception:
                     pass
+
+
+def _watch_validation(p):
+    """The scene library runs validation as a chain of delayed calls; this
+    notices when its queue drains and tells every client the result."""
+    v = _g['validating']
+    lib = _lib()
+    if lib._job.get('gen') is not None or lib._queue:
+        v['idle'] = 0
+        return
+    v['idle'] += 1
+    if v['idle'] < 3:          # _next() rescans one frame after the job ends
+        return
+    _g['validating'] = None
+    rep = lib._load_report(v['folder'])
+    _send(p.notify({'type': 'validation', 'module': v['module'], 'phase': 'done',
+                    'result': (rep or {}).get('result', 'fail'), 'report': _trim_report(rep)}))
+    _send(p.notify({'type': 'libraryChanged', 'module': v['module']}))
+
+
+def _trim_report(rep):
+    """A quarantine report (validation/<folder>.json) as the app shows it."""
+    if not rep:
+        return None
+    checks = []
+    for c in ((rep.get('static') or {}).get('checks') or []):
+        checks.append({'stage': 'static', 'check': c.get('check'), 'status': c.get('status'), 'detail': c.get('detail', '')})
+    for stage in ('interface', 'runtime', 'admission'):
+        for c in rep.get(stage) or []:
+            checks.append({'stage': stage, 'check': c.get('check'), 'status': c.get('status'), 'detail': c.get('detail', '')})
+    return {'module': rep.get('id'), 'version': rep.get('version'), 'type': rep.get('type'),
+            'result': rep.get('result'), 'started': rep.get('started'), 'finished': rep.get('finished'),
+            'touchdesigner': rep.get('touchdesigner'), 'performance': rep.get('performance') or {},
+            'checks': checks}
 
 
 def Status():
@@ -283,6 +320,9 @@ class Adapter(object):
         t = op('/project1/scene_library/LIBRARY')
         if rescan or t.numRows <= 1:
             lib.Scan(quiet=True)        # slow: toeexpand on every module
+            logic = op('/project1/palette_source/palette_logic')
+            if logic is not None and hasattr(logic.module, 'RefreshPacks'):
+                logic.module.RefreshPacks()     # palettes of installed / removed packs
         static = op('/project1/scene_library').fetch('static', {})
         mods = []
         for r in range(1, t.numRows):
@@ -426,6 +466,42 @@ class Adapter(object):
         if w is None:
             raise _err('failed', 'no projector - run build_projector_window.py')
         {'open': w.par.winopen, 'perform': w.par.performance, 'close': w.par.winclose}[action].pulse()
+
+    # ------------------------------------------------- library management
+    def _folder(self, mid):
+        lib = _lib()
+        folder = lib._folder_for(mid)
+        if folder is None:
+            raise _err('unknown_module', '%%s is not in the library - install it, then rescan' %% mid)
+        return lib, folder
+
+    def validate(self, mid):
+        lib, folder = self._folder(mid)
+        if _g.get('validating') is not None or lib._job.get('gen') is not None or lib._queue:
+            raise _err('busy', 'a validation is already running - wait for it to finish')
+        _g['validating'] = {'module': mid, 'folder': folder, 'idle': 0}
+        _send(_proto().notify({'type': 'validation', 'module': mid, 'phase': 'running'}))
+        lib.Validate(folder)
+
+    def report(self, mid):
+        lib, folder = self._folder(mid)
+        return _trim_report(lib._load_report(folder))
+
+    def approve(self, mid, note):
+        lib, folder = self._folder(mid)
+        static = op('/project1/scene_library').fetch('static', {}).get(folder) or {}
+        rep = lib._load_report(folder)
+        if rep is None or rep.get('version') != static.get('version'):
+            raise _err('not_validated', '%%s %%s has not been validated - validate it first'
+                       %% (mid, static.get('version')))
+        if rep.get('result') == 'fail' or static.get('status') == 'fail':
+            raise _err('validation_failed', '%%s failed validation and cannot be approved' %% mid)
+        if not lib.Approve(folder, note):
+            raise _err('failed', 'the scene library refused the approval')
+
+    def revoke(self, mid):
+        lib, folder = self._folder(mid)
+        lib.Revoke(folder)
 
     def close_client(self, client):
         try:

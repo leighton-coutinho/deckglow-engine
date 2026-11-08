@@ -557,6 +557,62 @@ Electron window stops painting (smoke runs now show inactive with
 Not yet: the app launching TouchDesigner and writing a fresh token first (the
 contract's intended order), installer/setup wizard, crossfades, MIDI.
 
+**Desktop app — step 3 (library and packs): done and verified** (2026-11-07). The app installs and removes
+`.dgpack` packs and takes each module through validate → review → approve.
+
+- **Trust model unchanged:** installing approves nothing; validation alone
+  approves nothing; the approve button sits next to the report and is refused
+  (`not_validated` / `validation_failed`) without a passing report for the
+  current version. A pack whose module is on a layer cannot be removed.
+- **Packs are the main process's job, not the bridge's:** `pack_tool.py
+  --json` (new flag: one JSON object per command — `ok`, `message`, `checks`,
+  `pack` details, `installed`, `code` such as `already_installed`). The main
+  process only inspects/installs files picked in its dialog or dropped on the
+  window (preload `webUtils.getPathForFile`), and removes only well-formed
+  non-`com.deckglow` ids. `DECKGLOW_PACKS` redirects installs for tests.
+- **Bridge additions** (minor, still `deckglow.control/1`): `validateModule`
+  (acks at once; `validation` running/done broadcasts — the bridge's Frame
+  loop watches the scene library's `_job`/`_queue` and reports 3 idle frames
+  after it drains, when `_next()` has rescanned), `getReport` (the quarantine
+  report trimmed to stage/check/status/detail), `approveModule`,
+  `revokeModule`, a `libraryChanged` broadcast, and error codes
+  `unknown_module`, `busy`, `not_validated`, `validation_failed`. Protocol
+  handlers can now queue broadcasts (`self._notes`); `notify()` builds one.
+- **Pack palettes follow installs:** `palette_logic.RefreshPacks()` (moved out
+  of the builder) re-reads `Packs/*/pack.json` palettes, drops those of
+  removed packs, never touches the show's own rows, and keeps the selected
+  palette selected by name. `getLibrary rescan` calls it. Tested with stand-in
+  objects outside TD.
+- **Mock bridge** now has validate (simulated 1.5 s; uses the real report on
+  disk when one matches), report, approve, revoke — all in memory — finds
+  pack modules in `Packs/<id>/modules/<folder>/` (it looked one level too high
+  before and never saw packs), lists pack palettes, uses the real approval
+  strings (`stale (1.0.0)`, `blocked (fails now)`) and `first-party` source.
+  `--packs <dir>` for a test install folder.
+- `touchDesigner/tools/test_bridge_protocol.py` — the protocol's offline test,
+  now in the repo (it had lived in a scratchpad) and run by `npm test`.
+
+Verified outside TD: `npm test` 12/12 (library flow on a throwaway pack; the
+runtime's `approved.json` and `validation/` proven untouched); Electron smoke
+19/19 with `--smoke-pack` (inspect, an unpicked file refused, install, rescan,
+remove through the real IPC); UI checked by eye in the browser pane — review
+dialog with the real Stub Scene report, validate again, approve with a note,
+install of the example pack, refused removal while on a layer, removal.
+
+**Verified in TouchDesigner** (after rebuilding palette_source, the stack and
+the bridge): a throwaway pack (`com.example.libtest`, the example pack
+renamed) went through 25 checks against the live runtime — installed into
+`Packs/`, rescan listed it not validated in 0.4 s with its palette added,
+loading and approving refused, a second validation refused `busy`, a real
+quarantine run broadcast running/done (warn — black at idle — after 5.4 s, 48
+checks, report written), approved, loaded onto Scene (`ok: 1280x720`), Scene
+restored, revoked, pack removed, module and palette gone, selected palette
+unchanged, and `approved.json` byte-identical afterwards (the test report was
+deleted). The Electron smoke against TD passed 19/19 including the pack round
+trip through the real IPC. The script is not in the repo: it writes to the
+real `Packs/`, `validation/` and `approved.json` (and puts them back), which
+is not something `npm test` should do.
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -586,8 +642,9 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `bridge_protocol.py` | Plain Python: the protocol logic, embedded in the bridge, tested outside TD with a fake adapter. |
 | `bridge_client.py` | Standard-library WebSocket client, **outside** TD: `state`, `send '<json>'`, `preview out.jpg`, `demo`. |
 | `mock_bridge.py` | Plain Python, **outside** TD: a stand-in control bridge (real protocol code, in-memory show) for developing the app without TouchDesigner. `--port` to move it; refuses a port already in use. |
+| `test_bridge_protocol.py` | Plain Python, **outside** TD: the protocol's offline test with a fake adapter (also run by the app's `npm test`). |
 | `build_solid_background.py` | Builds and exports `modules/solid_background/` (palette background, pulsing toward primary on the beat). |
-| `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. |
+| `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. `--json` for one machine-readable result (what the desktop app reads). |
 | `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |
 | `validate_static.py` | Plain Python, also runs **outside** TD: §15.1 static package checks for every module under a folder. Exits 1 on any failure. |
 | `build_scene_library.py` | Builds `/project1/scene_library`: discovery, quarantine (§15.2–15.4), JSON reports in `validation/`, per-version approvals in `library/approved.json`, and the gated `LoadApproved`. |

@@ -9,6 +9,10 @@ inspect module .tox files, as validate_static.py does):
     python -I touchDesigner/tools/pack_tool.py remove  <pack id>
     python -I touchDesigner/tools/pack_tool.py list
 
+Add --json (before the command) for one JSON object on stdout instead of
+text - what the desktop app reads: {"ok", "command", "message", "checks",
+"pack", "installed", ...}.
+
 Packs install into touchDesigner/Packs/<pack id>/ unless --packs <dir> is
 given. Installing never approves anything: in TouchDesigner the scene library
 discovers the pack, quarantines each module, and the DJ approves per version.
@@ -48,6 +52,32 @@ DEFAULT_PACKS = os.path.normpath(os.path.join(TOOLS, '..', 'Packs'))
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)           # reproducible archives
 
 
+JSON_OUT = None          # a dict in --json mode; commands fill it, main prints it
+
+
+def _say(*args):
+    if JSON_OUT is None:
+        print(*args)
+    else:
+        JSON_OUT.setdefault('log', []).append(' '.join(str(a) for a in args))
+
+
+def _meta(p):
+    """What a person needs to decide whether to install a pack."""
+    if not p:
+        return None
+    out = dict((k, p.get(k)) for k in ('id', 'displayName', 'author', 'version', 'description',
+                                       'license', 'homepage', 'runtimeApi', 'signature'))
+    out['modules'] = p.get('modules', [])
+    out['palettes'] = len(p.get('palettes') or [])
+    return out
+
+
+def _report(**fields):
+    if JSON_OUT is not None:
+        JSON_OUT.update(fields)
+
+
 class Result(object):
     def __init__(self):
         self.checks = []
@@ -70,11 +100,11 @@ class Result(object):
         return 'fail' if 'fail' in s else 'warn' if 'warn' in s else 'pass'
 
     def show(self, title):
-        print('%s  %s' % (self.status.upper(), title))
+        _say('%s  %s' % (self.status.upper(), title))
         for c in self.checks:
             if c['status'] != 'pass':
-                print('    %-4s %-22s %s' % (c['status'], c['check'], c['detail']))
-        print('    %d checks, %d failed, %d warnings' % (
+                _say('    %-4s %-22s %s' % (c['status'], c['check'], c['detail']))
+        _say('    %d checks, %d failed, %d warnings' % (
             len(self.checks), sum(c['status'] == 'fail' for c in self.checks),
             sum(c['status'] == 'warn' for c in self.checks)))
 
@@ -315,7 +345,7 @@ def cmd_build(src, out, toeexpand=None):
     res, p = check_pack_dir(src, toeexpand)
     res.show('pack folder %s' % src)
     if res.status == 'fail':
-        print('not built: fix the failures above')
+        _say('not built: fix the failures above')
         return 1
     out = out or os.path.join(os.path.dirname(os.path.abspath(src)),
                               '%s-%s.dgpack' % (p['id'], p['version']))
@@ -326,7 +356,7 @@ def cmd_build(src, out, toeexpand=None):
             info.external_attr = 0o644 << 16
             with open(os.path.join(src, rel), 'rb') as f:
                 z.writestr(info, f.read())
-    print('built %s (%d bytes, %s)' % (out, os.path.getsize(out), sha256(out)[:23]))
+    _say('built %s (%d bytes, %s)' % (out, os.path.getsize(out), sha256(out)[:23]))
     return 0
 
 
@@ -338,24 +368,35 @@ def _installed(packs, pid):
         return None
 
 
-def cmd_verify(path, toeexpand=None):
+def cmd_verify(path, packs=DEFAULT_PACKS, toeexpand=None):
     res, p, _ = verify(path, toeexpand)
     res.show(path)
+    prev = _installed(packs, p['id']) if p and p.get('id') else None
+    if p:
+        msg = '%s %s' % (p['id'], {'pass': 'passes every check', 'warn': 'passes with warnings'}.get(res.status, 'fails'))
+    else:
+        msg = 'not a readable pack'
+    _report(ok=res.status != 'fail', status=res.status, checks=res.checks, pack=_meta(p),
+            installed=prev.get('version') if prev else None, message=msg)
     return 1 if res.status == 'fail' else 0
 
 
 def cmd_install(path, packs, force=False, toeexpand=None):
     res, p, tmp = verify(path, toeexpand, keep=True)
     res.show(path)
+    _report(ok=False, status=res.status, checks=res.checks, pack=_meta(p))
     if res.status == 'fail':
-        print('not installed')
+        _say('not installed')
+        _report(message='not installed: the pack fails its checks')
         return 1
     try:
         pid, ver = p['id'], p['version']
         prev = _installed(packs, pid)
         if prev and not force and vs._semver(ver) <= vs._semver(prev.get('version', '0.0.0')):
-            print('not installed: %s %s is already installed (use --force to reinstall or downgrade)'
+            _say('not installed: %s %s is already installed (use --force to reinstall or downgrade)'
                   % (pid, prev.get('version')))
+            _report(code='already_installed', installed=prev.get('version'),
+                    message='%s %s is already installed' % (pid, prev.get('version')))
             return 1
         os.makedirs(packs, exist_ok=True)
         dest = os.path.join(packs, pid)
@@ -373,9 +414,11 @@ def cmd_install(path, packs, force=False, toeexpand=None):
             os.rename(dest, old)
         os.rename(staging, dest)
         shutil.rmtree(old, ignore_errors=True)
-        print('installed %s %s into %s%s' % (pid, ver, dest,
+        _say('installed %s %s into %s%s' % (pid, ver, dest,
               ' (was %s)' % prev.get('version') if prev else ''))
-        print('next: in TouchDesigner, Scan and Validate in the scene library, then Approve each module')
+        _say('next: in TouchDesigner, Scan and Validate in the scene library, then Approve each module')
+        _report(ok=True, dest=dest, previous=prev.get('version') if prev else None,
+                message='installed %s %s' % (pid, ver))
         return 0
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -384,29 +427,40 @@ def cmd_install(path, packs, force=False, toeexpand=None):
 def cmd_remove(pid, packs):
     dest = os.path.join(packs, pid)
     if not vs.ID_RE.match(pid or '') or not os.path.isfile(os.path.join(dest, 'installed.json')):
-        print('no installed pack %r in %s' % (pid, packs))
+        _say('no installed pack %r in %s' % (pid, packs))
+        _report(ok=False, code='not_installed', message='no installed pack %r' % pid)
         return 1
     shutil.rmtree(dest)
-    print('removed %s (approvals in library/approved.json are left; they no longer match a module)' % pid)
+    _say('removed %s (approvals in library/approved.json are left; they no longer match a module)' % pid)
+    _report(ok=True, message='removed %s' % pid)
     return 0
 
 
 def cmd_list(packs):
     if not os.path.isdir(packs):
-        print('no packs installed (%s does not exist)' % packs)
+        _say('no packs installed (%s does not exist)' % packs)
+        _report(ok=True, packs=[])
         return 0
     rows = [_installed(packs, d) for d in sorted(os.listdir(packs))]
     rows = [x for x in rows if x]
     for x in rows:
-        print('%-32s %-8s %d module(s)  installed %s' % (x['id'], x['version'], len(x.get('modules', [])), x['installed']))
+        try:
+            with open(os.path.join(packs, x['id'], 'pack.json'), 'r', encoding='utf-8') as f:
+                x['pack'] = _meta(json.load(f))
+        except (OSError, ValueError):
+            x['pack'] = None
+    _report(ok=True, packs=rows)
+    for x in rows:
+        _say('%-32s %-8s %d module(s)  installed %s' % (x['id'], x['version'], len(x.get('modules', [])), x['installed']))
     if not rows:
-        print('no packs installed')
+        _say('no packs installed')
     return 0
 
 
 def main(argv):
     ap = argparse.ArgumentParser(prog='pack_tool.py', description='DeckGlow creator packs')
     ap.add_argument('--packs', default=DEFAULT_PACKS, help='install directory')
+    ap.add_argument('--json', action='store_true', help='one JSON object on stdout instead of text')
     sub = ap.add_subparsers(dest='cmd', required=True)
     b = sub.add_parser('build')
     b.add_argument('folder')
@@ -418,15 +472,29 @@ def main(argv):
     sub.add_parser('remove').add_argument('id')
     sub.add_parser('list')
     a = ap.parse_args(argv[1:])
-    if a.cmd == 'build':
-        return cmd_build(a.folder, a.out)
-    if a.cmd == 'verify':
-        return cmd_verify(a.file)
-    if a.cmd == 'install':
-        return cmd_install(a.file, a.packs, a.force)
-    if a.cmd == 'remove':
-        return cmd_remove(a.id, a.packs)
-    return cmd_list(a.packs)
+    global JSON_OUT
+    if a.json:
+        JSON_OUT = {'command': a.cmd}
+    try:
+        if a.cmd == 'build':
+            code = cmd_build(a.folder, a.out)
+        elif a.cmd == 'verify':
+            code = cmd_verify(a.file, a.packs)
+        elif a.cmd == 'install':
+            code = cmd_install(a.file, a.packs, a.force)
+        elif a.cmd == 'remove':
+            code = cmd_remove(a.id, a.packs)
+        else:
+            code = cmd_list(a.packs)
+    except Exception as e:                       # e.g. an unreadable file
+        if JSON_OUT is None:
+            raise
+        JSON_OUT.update(ok=False, code='error', message='%s: %s' % (type(e).__name__, e))
+        code = 1
+    if JSON_OUT is not None:
+        JSON_OUT['ok'] = code == 0
+        print(json.dumps(JSON_OUT))
+    return code
 
 
 if __name__ == '__main__':

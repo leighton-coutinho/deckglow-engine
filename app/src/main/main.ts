@@ -9,12 +9,15 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } fr
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { AppConfig, ContractInfo, ControlDecl, ShowState } from '../shared/api';
+import { execFile } from 'node:child_process';
+import type { AppConfig, ContractInfo, ControlDecl, PackResult, ShowState } from '../shared/api';
 
 const SHOW_SCHEMA = 'deckglow.show/1';
 const RENDERER = path.join(__dirname, '..', 'web');   // dist/web: renderer/ and shared/
 const PORT = Number(process.env.DECKGLOW_PORT || 9980);
 const SMOKE = process.argv.find((a) => a.startsWith('--smoke='))?.slice('--smoke='.length) ?? null;
+// --smoke-pack=<file.dgpack>: the smoke run also installs and removes this pack, as if picked
+const SMOKE_PACK = SMOKE ? process.argv.find((a) => a.startsWith('--smoke-pack='))?.slice('--smoke-pack='.length) ?? null : null;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -81,13 +84,61 @@ function readContract(): ContractInfo | null {
 function thumbnail(p: unknown): string | null {
   if (typeof p !== 'string' || !TD_DIR) return null;
   const full = path.resolve(p);
-  if (!inside(full, TD_DIR) || path.extname(full).toLowerCase() !== '.png') return null;
+  const roots = [TD_DIR, ...(process.env.DECKGLOW_PACKS ? [path.resolve(process.env.DECKGLOW_PACKS)] : [])];
+  if (!roots.some((r) => inside(full, r)) || path.extname(full).toLowerCase() !== '.png') return null;
   try {
     if (statSync(full).size > 4 * 1024 * 1024) return null;
     return 'data:image/png;base64,' + readFileSync(full).toString('base64');
   } catch {
     return null;
   }
+}
+
+// ------------------------------------------------------------ packs
+const PACK_ID = /^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_-]*)+$/;
+const pickedPacks = new Set<string>();      // only these files may be inspected or installed
+
+function findPython(): string {
+  for (const c of [process.env.DECKGLOW_PYTHON, 'C:/Program Files/Derivative/TouchDesigner/bin/python.exe']) {
+    if (c && existsSync(c)) return c;
+  }
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+function packTool(args: string[]): Promise<PackResult> {
+  if (!TD_DIR) return Promise.resolve({ ok: false, command: args[0], message: 'runtime folder not found' });
+  const tool = path.join(TD_DIR, 'tools', 'pack_tool.py');
+  // DECKGLOW_PACKS: a test install folder (default touchDesigner/Packs, where TD looks)
+  const where = process.env.DECKGLOW_PACKS ? ['--packs', process.env.DECKGLOW_PACKS] : [];
+  return new Promise((resolve) => {
+    execFile(findPython(), ['-I', tool, '--json', ...where, ...args], { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        const line = stdout.trim().split(/\r?\n/).pop() || '';
+        try {
+          resolve(JSON.parse(line) as PackResult);
+        } catch {
+          resolve({ ok: false, command: args[0], code: 'error',
+            message: (err ? `${err.message}. ` : '') + (stderr.trim().split(/\r?\n/).pop() || 'pack_tool.py gave no result') });
+        }
+      });
+  });
+}
+
+function registerPack(p: unknown): string | null {
+  if (typeof p !== 'string' || !p || path.extname(p).toLowerCase() !== '.dgpack') return null;
+  const full = path.resolve(p);
+  try {
+    if (!statSync(full).isFile()) return null;
+  } catch {
+    return null;
+  }
+  pickedPacks.add(full);
+  return full;
+}
+
+function pickedPack(p: unknown): string {
+  if (typeof p !== 'string' || !pickedPacks.has(p)) throw new Error('choose the pack file first');
+  return p;
 }
 
 function checkShow(value: unknown): ShowState {
@@ -98,7 +149,10 @@ function checkShow(value: unknown): ShowState {
 }
 
 function registerIpc(win: BrowserWindow): void {
-  const config: AppConfig = { url: `ws://127.0.0.1:${PORT}/`, root: ROOT, smoke: !!SMOKE, version: app.getVersion() };
+  const config: AppConfig = {
+    url: `ws://127.0.0.1:${PORT}/`, root: ROOT, smoke: !!SMOKE, version: app.getVersion(),
+    smokePack: SMOKE_PACK ? registerPack(SMOKE_PACK) : null,
+  };
   ipcMain.handle('deckglow:config', () => config);
   ipcMain.handle('deckglow:token', () => readToken());
   ipcMain.handle('deckglow:contract', () => readContract());
@@ -126,6 +180,23 @@ function registerIpc(win: BrowserWindow): void {
     if (statSync(file).size > 1024 * 1024) throw new Error('show file is larger than 1 MB');
     return { path: file, show: checkShow(JSON.parse(readFileSync(file, 'utf8'))) };
   });
+  ipcMain.handle('deckglow:pickPack', async () => {
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Install a creator pack',
+      defaultPath: app.getPath('downloads'),
+      filters: [{ name: 'DeckGlow pack', extensions: ['dgpack'] }],
+      properties: ['openFile'],
+    });
+    return r.canceled || !r.filePaths[0] ? null : registerPack(r.filePaths[0]);
+  });
+  ipcMain.handle('deckglow:dropPack', (_e, p) => registerPack(p));
+  ipcMain.handle('deckglow:inspectPack', (_e, p) => packTool(['verify', pickedPack(p)]));
+  ipcMain.handle('deckglow:installPack', (_e, p, force) => packTool(['install', pickedPack(p), ...(force === true ? ['--force'] : [])]));
+  ipcMain.handle('deckglow:removePack', (_e, id) => {
+    if (typeof id !== 'string' || !PACK_ID.test(id) || id.startsWith('com.deckglow')) throw new Error('not a pack id');
+    return packTool(['remove', id]);
+  });
+  ipcMain.handle('deckglow:listPacks', () => packTool(['list']));
   ipcMain.handle('deckglow:smokeDone', async (_e, result: { ok: boolean; steps: string[] }) => {
     if (!SMOKE) return;
     const image = await win.webContents.capturePage();

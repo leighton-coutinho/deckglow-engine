@@ -14,10 +14,17 @@ The adapter provides:
     background(rgb_or_None)              brand(fields)
     output(fields)                       engine(mode, bpm)
     projector(action)                    close_client(client)
+    validate(module_id)                  report(module_id) -> dict or None
+    approve(module_id, note)             revoke(module_id)
 Adapter methods raise BridgeError for refusals; anything else is 'failed'.
+
+Runtime-initiated messages (validation progress, libraryChanged) are built
+with notify(msg), which returns the (client, msg) pairs for every
+authenticated client.
 """
 
 import json
+import re
 
 PROTOCOL = 'deckglow.control/1'
 SHOW = 'deckglow.show/1'
@@ -67,6 +74,16 @@ def _rgb(value, what='color'):
     return [float(c) for c in value]
 
 
+MODULE_ID_RE = re.compile(r'^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_-]*)+$')   # validate_static ID_RE
+
+
+def _module_id(msg):
+    mid = msg.get('module')
+    if not isinstance(mid, str) or len(mid) > 128 or not MODULE_ID_RE.match(mid):
+        raise BridgeError('bad_field', 'module must be a module id such as com.example.pack.scene')
+    return mid
+
+
 def _slot(msg):
     slot = msg.get('slot')
     if slot not in SLOTS:
@@ -100,6 +117,7 @@ class Protocol(object):
         self.rt = rt
         self.token = token
         self.clients = {}            # client -> {'auth', 'bad', 'status', 'preview'}
+        self._notes = []             # broadcasts a handler queues besides state
 
     # ------------------------------------------------------- connection
     def open(self, client):
@@ -117,6 +135,10 @@ class Protocol(object):
 
     def subscribers(self, what):
         return [(c, s[what]) for c, s in self.clients.items() if s['auth'] and s[what]]
+
+    def notify(self, msg):
+        """A runtime-initiated message for every authenticated client."""
+        return [(c, msg) for c in self.authenticated()]
 
     # ---------------------------------------------------------- receive
     def receive(self, client, text):
@@ -153,6 +175,7 @@ class Protocol(object):
         handler = getattr(self, '_on_' + str(mtype), None) if isinstance(mtype, str) else None
         if handler is None or mtype == 'hello':
             return [(client, self._err(mid, 'unknown_type', 'unknown message type %r' % mtype))]
+        self._notes = []
         try:
             reply, changed = handler(client, msg)
         except BridgeError as e:
@@ -165,6 +188,9 @@ class Protocol(object):
         if changed:
             state = {'type': 'state', 'state': self.rt.state()}
             out += [(c, state) for c in self.authenticated()]
+        for note in self._notes:
+            out += self.notify(note)
+        self._notes = []
         return out
 
     @staticmethod
@@ -177,7 +203,10 @@ class Protocol(object):
         return {'type': 'state', 'state': self.rt.state()}, False
 
     def _on_getLibrary(self, client, msg):
-        lib = self.rt.library(rescan=_bool(msg.get('rescan', False), 'rescan'))
+        rescan = _bool(msg.get('rescan', False), 'rescan')
+        lib = self.rt.library(rescan=rescan)
+        if rescan:                 # every window should re-read what changed
+            self._notes.append({'type': 'libraryChanged', 'module': None})
         return {'type': 'library', 'modules': lib.get('modules', []),
                 'palettes': lib.get('palettes', [])}, False
 
@@ -300,6 +329,30 @@ class Protocol(object):
                                    'width': int(_num(p.get('width', 480), 160, 960, 'preview.width'))}
             else:
                 raise BridgeError('bad_field', 'preview must be {"fps", "width"} or false')
+        return None, False
+
+    # ------------------------------------------------ library management
+    # Validation runs in TouchDesigner's quarantine (about 10 s a module);
+    # the runtime broadcasts {"type": "validation"} as it starts and ends.
+    def _on_validateModule(self, client, msg):
+        self.rt.validate(_module_id(msg))
+        return None, False
+
+    def _on_getReport(self, client, msg):
+        mid = _module_id(msg)
+        return {'type': 'report', 'module': mid, 'report': self.rt.report(mid)}, False
+
+    def _on_approveModule(self, client, msg):
+        mid = _module_id(msg)
+        note = _str(msg.get('note', ''), 'note', 200)
+        self.rt.approve(mid, note)
+        self._notes.append({'type': 'libraryChanged', 'module': mid})
+        return None, False
+
+    def _on_revokeModule(self, client, msg):
+        mid = _module_id(msg)
+        self.rt.revoke(mid)
+        self._notes.append({'type': 'libraryChanged', 'module': mid})
         return None, False
 
     def _on_applyShow(self, client, msg):

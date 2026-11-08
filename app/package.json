@@ -10,7 +10,7 @@
     "start": "npm run build && electron .",
     "mock": "node scripts/run-mock.mjs",
     "web": "npm run build && node scripts/dev-server.mjs",
-    "test": "npm run build && node --test test/",
+    "test": "npm run build && node --test --test-timeout=60000 test/",
     "smoke": "npm run build && electron . --smoke=out/smoke.png"
   },
   "devDependencies": {

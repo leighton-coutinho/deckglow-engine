@@ -76,7 +76,35 @@ export interface AppConfig {
   url: string;
   root: string | null;
   smoke: boolean;
+  /** Smoke runs only: a pack file registered as if picked, to install and remove. */
+  smokePack?: string | null;
   version: string;
+}
+
+/** pack.json details shown before installing (pack_tool.py --json). */
+export interface PackMeta {
+  id: string; displayName?: string; author?: string; version: string; description?: string;
+  license?: string | null; homepage?: string | null; runtimeApi?: string; signature?: unknown;
+  modules: { folder: string; id: string; version: string }[];
+  palettes: number;
+}
+export interface PackCheck { status: 'pass' | 'warn' | 'fail'; check: string; detail: string }
+/** One pack_tool.py --json result. */
+export interface PackResult {
+  ok: boolean; command: string; message?: string; code?: string; status?: string;
+  checks?: PackCheck[]; pack?: PackMeta | null; installed?: string | null; previous?: string | null;
+  packs?: InstalledPack[]; log?: string[];
+}
+export interface InstalledPack {
+  id: string; version: string; installed: string; from?: string; modules: PackMeta['modules']; pack: PackMeta | null;
+}
+
+/** A quarantine report as the bridge sends it (getReport, validation done). */
+export interface ValidationReport {
+  module: string; version: string; type: string; result: 'pass' | 'warn' | 'fail';
+  started?: string; finished?: string; touchdesigner?: string;
+  performance: { cook_ms_avg?: number; cook_ms_peak?: number; [k: string]: unknown };
+  checks: { stage: string; check: string; status: string; detail: string }[];
 }
 
 /** What the preload exposes as window.deckglow. Every call goes through IPC. */
@@ -90,4 +118,12 @@ export interface DeckglowApi {
   saveShow(show: ShowState): Promise<string | null>;
   openShow(): Promise<{ path: string; show: ShowState } | null>;
   smokeDone(result: { ok: boolean; steps: string[] }): Promise<void>;
+  /** Creator packs - pack_tool.py run by the main process. Only files the person
+   *  picked in the dialog, or dropped on the window, can be inspected or installed. */
+  pickPack(): Promise<string | null>;
+  packFromFile(file: File): Promise<string | null>;
+  inspectPack(path: string): Promise<PackResult>;
+  installPack(path: string, force: boolean): Promise<PackResult>;
+  removePack(id: string): Promise<PackResult>;
+  listPacks(): Promise<PackResult>;
 }

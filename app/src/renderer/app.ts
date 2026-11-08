@@ -6,6 +6,8 @@
 // actually doing - also when another window or a show file changed it.
 
 import { BridgeClient, BridgeRequestError, type Connection } from './bridge.js';
+import { $, el, toast } from './dom.js';
+import { createLibrary } from './library.js';
 import { api } from './platform.js';
 import { runSmoke } from './smoke.js';
 import { CONFIRM_STROBE, SLOTS } from '../shared/api.js';
@@ -39,25 +41,6 @@ const OPTION_LABELS: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------ helpers
-type Child = Node | string | null | undefined | false;
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K, props: Record<string, any> = {}, ...children: Child[]
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === 'class') node.className = v;
-    else if (k === 'text') node.textContent = v;
-    else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
-    else if (k === 'dataset') Object.assign(node.dataset, v);
-    else if (k in node && typeof v !== 'string') (node as any)[k] = v;
-    else node.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of children) if (c) node.append(c);
-  return node;
-}
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
 /** Calls fn at most every `ms`, always delivering the last value. */
 function throttle<A extends unknown[]>(fn: (...a: A) => void, ms: number): (...a: A) => void {
   let last = 0;
@@ -97,18 +80,12 @@ const rgbOf = (h: string): [number, number, number] =>
   [1, 3, 5].map((i) => Math.round((parseInt(h.slice(i, i + 2), 16) / 255) * 1000) / 1000) as [number, number, number];
 const fmt = (v: number, step: number) => (step >= 1 ? String(Math.round(v)) : v.toFixed(step >= 0.1 ? 1 : 2));
 
-function toast(text: string, kind: 'error' | 'info' = 'error'): void {
-  const t = el('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status', text });
-  $('toasts').append(t);
-  setTimeout(() => { t.classList.add('gone'); setTimeout(() => t.remove(), 400); }, kind === 'error' ? 6000 : 3500);
-}
-
 // --------------------------------------------------------------- the app
 let bridge: BridgeClient;
 let contract: ContractInfo | null = null;
 let library: Library = { modules: [], palettes: [] };
 let state: ShowState | null = null;
-const thumbs = new Map<string, string>();
+let libraryPanel: ReturnType<typeof createLibrary>;
 
 async function send(msg: Record<string, unknown>, quiet = false): Promise<any> {
   try {
@@ -381,39 +358,11 @@ function setupOutput(): void {
 }
 
 // --------------------------------------------------------------- library
-async function loadLibrary(rescan = false): Promise<void> {
-  try {
-    library = await bridge.getLibrary(rescan);
-  } catch {
-    return;
-  }
+// The library panel (library.ts) owns the module list; layer menus redraw from it.
+function onLibrary(lib: Library): void {
+  library = lib;
   slotKeys = {};
-  renderLibrary();
   if (state) applyState(state);
-}
-
-function renderLibrary(): void {
-  const host = $('library');
-  const order = (m: LibraryModule) => SLOTS.indexOf(m.type as SlotName);
-  const mods = [...library.modules].sort((a, b) => order(a) - order(b) || a.displayName.localeCompare(b.displayName));
-  host.replaceChildren(...mods.map((m) => {
-    const ok = m.approved === 'yes';
-    const img = el('img', { alt: '', loading: 'lazy' });
-    const cached = thumbs.get(m.thumbnail);
-    if (cached) img.src = cached;
-    else void api.thumbnail(m.thumbnail).then((u) => { if (u) { thumbs.set(m.thumbnail, u); img.src = u; } });
-    const slotTitle = SLOT_INFO[m.type as SlotName]?.title ?? m.type;
-    const why = ok ? '' : m.approved === 'stale' ? 'new version - validate and approve it in TouchDesigner'
-      : m.quarantine === 'fail' ? 'failed validation' : 'not approved yet - validate and approve it in TouchDesigner';
-    return el('div', { class: `module${ok ? '' : ' module-locked'}`, title: why || `Load into ${slotTitle}`, dataset: { module: m.id } },
-      el('div', { class: 'thumb' }, img),
-      el('div', { class: 'module-meta' },
-        el('strong', { text: m.displayName }),
-        el('span', { class: 'muted small', text: `${slotTitle} · ${m.version}${m.source && m.source !== 'com.deckglow' ? ' · ' + m.source : ''}` }),
-        ok ? el('button', { class: 'btn btn-small', text: 'Use', onclick: () => fire({ type: 'setSlotModule', slot: m.type, module: m.id }) })
-          : el('span', { class: 'badge badge-muted', text: m.approved === 'stale' ? 'needs re-approval' : m.quarantine === 'fail' ? 'failed' : 'not approved' })));
-  }));
-  if (!mods.length) host.append(el('p', { class: 'hint', text: 'No modules yet - connect to TouchDesigner.' }));
 }
 
 // ----------------------------------------------------------------- show
@@ -438,14 +387,6 @@ function setupShow(): void {
     } catch (e) {
       if (!(e instanceof BridgeRequestError)) toast(`Could not open: ${(e as Error).message}`);
     }
-  });
-  $('rescan').addEventListener('click', async () => {
-    const b = $<HTMLButtonElement>('rescan');
-    b.disabled = true;
-    b.textContent = 'Scanning…';
-    await loadLibrary(true);
-    b.disabled = false;
-    b.textContent = 'Rescan';
   });
 }
 
@@ -513,7 +454,6 @@ async function main(): Promise<void> {
   setupOutput();
   setupShow();
   setupLanes();
-  renderLibrary();
 
   bridge = new BridgeClient({
     url: config.url,
@@ -522,17 +462,28 @@ async function main(): Promise<void> {
     onConnection: (c) => {
       showConnection(c);
       if (c.phase === 'open') {
-        void loadLibrary();
+        void libraryPanel.load();
         void bridge.subscribe({ status: true, preview: { fps: 15, width: 640 } }).catch(() => undefined);
       }
+      libraryPanel.render();
     },
     onState: applyState,
     onStatus: applyStatus,
     onPreview: applyPreview,
+    onEvent: (m) => libraryPanel.onEvent(m),
   });
+  libraryPanel = createLibrary({
+    bridge, api, state: () => state, onLibrary,
+    slotTitle: (t) => SLOT_INFO[t as SlotName]?.title ?? t,
+  });
+  libraryPanel.setup();
+  void libraryPanel.loadPacks();
   bridge.start();
-  (window as any).__deckglow = { bridge, get previewFrames() { return previewFrames; }, get library() { return library; } };
-  if (config.smoke) void runSmoke(bridge, () => previewFrames, () => library).then((r) => api.smokeDone(r));
+  (window as any).__deckglow = { bridge, get previewFrames() { return previewFrames; }, get library() { return library; }, libraryPanel };
+  if (config.smoke) {
+    void runSmoke(bridge, () => previewFrames, () => library, { api, pack: config.smokePack ?? null, panel: libraryPanel })
+      .then((r) => api.smokeDone(r));
+  }
 }
 
 void main();

@@ -32,6 +32,8 @@ export interface BridgeOptions {
   onState?: (s: ShowState) => void;
   onStatus?: (s: RuntimeStatus) => void;
   onPreview?: (frame: Blob | ArrayBuffer) => void;
+  /** Other runtime-initiated messages: validation progress, libraryChanged. */
+  onEvent?: (m: { type: string; [k: string]: any }) => void;
 }
 
 type Pending = { resolve: (m: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
@@ -184,6 +186,8 @@ export class BridgeClient {
         this.opts.onState?.(m.state);
       } else if (m.type === 'status' && m.status) {
         this.opts.onStatus?.(m.status);
+      } else if (typeof m.type === 'string') {
+        this.opts.onEvent?.(m);
       }
     };
 
