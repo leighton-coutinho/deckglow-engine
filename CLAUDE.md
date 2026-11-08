@@ -744,6 +744,14 @@ packaging".
   file path (Node 26 here accepts a folder) — the script now passes the glob
   `"test/*.test.mjs"`. Actions moved off the deprecated Node 20 majors
   (checkout/setup-node/setup-python/upload-artifact v7, setup-msbuild v3).
+  **Second run:** 15 pass, 5 skip (toeexpand) as intended, but the
+  "survive a runtime restart" test timed out waiting to reconnect on Node 22
+  (passes on Node 26 here). Suspected cause: Node 22's WebSocket reports a
+  refused connection with `error` and no `close`, and `bridge.ts` only
+  retried on `close`. The client now ends each attempt exactly once on
+  close, a pre-open error or a 5 s open timeout; the test waits 15 s and
+  reports the connection phases if it still fails. Not confirmed on Node 22
+  (fetching a Node 22 binary here was refused).
 - No licence file in the repo — the owner's decision.
 
 Verified so far: `npm test` 21/21; dev smoke 24/24 against the mock (adds

@@ -135,8 +135,15 @@ export class BridgeClient {
     ws.binaryType = this.opts.binaryType ?? 'blob';
     this.ws = ws;
     let authFailure: string | null = null;
+    // A connection attempt ends exactly once - whichever of close, error (before
+    // it opened) or the open timeout comes first. Some WebSocket implementations
+    // report a refused connection with error and no close; waiting for close alone
+    // left the client stuck in "connecting" with no retry scheduled.
+    let ended = false;
+    const openTimer = setTimeout(() => { if (ws.readyState !== WebSocket.OPEN) end(); }, 5000);
 
     ws.onopen = async () => {
+      clearTimeout(openTimer);
       try {
         const welcome = await this.rawRequest<any>({
           type: 'hello', token, client: this.opts.client ?? 'deckglow-app/0.1', protocol: PROTOCOL,
@@ -191,7 +198,13 @@ export class BridgeClient {
       }
     };
 
-    ws.onclose = () => {
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(openTimer);
+      if (ws.readyState !== WebSocket.CLOSED) {
+        try { ws.close(); } catch { /* already closing */ }
+      }
       const wasOpen = this.authenticated;
       this.authenticated = false;
       if (this.ws === ws) this.ws = null;
@@ -204,8 +217,9 @@ export class BridgeClient {
       if (authFailure) this.retry('auth-failed', authFailure);
       else this.retry('offline', wasOpen ? 'the runtime closed the connection' : 'TouchDesigner is not running, or the control bridge is not built');
     };
-
-    ws.onerror = () => { /* onclose follows and handles it */ };
+    ws.onclose = end;
+    // an error on an open socket is followed by close; one before it opened may not be
+    ws.onerror = () => { if (ws.readyState !== WebSocket.OPEN) end(); };
   }
 
   private retry(phase: 'offline' | 'auth-failed', reason: string): void {

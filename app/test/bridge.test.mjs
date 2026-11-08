@@ -115,9 +115,16 @@ test('status and preview subscriptions deliver, and survive a runtime restart', 
 
   mock = await startMock();
   const before = seen.frames.length;
-  await waitFor('reconnect', () => c.isOpen, 10000);
-  await waitFor('frames resume', () => seen.frames.length > before + 2, 5000);
-  c.stop();
+  try {
+    // the client backs off up to 5 s between attempts, and a CI runner starts Python slowly
+    await waitFor('reconnect', () => c.isOpen, 15000);
+    await waitFor('frames resume', () => seen.frames.length > before + 2, 5000);
+  } catch (e) {
+    const tail = seen.conn.slice(-8).join(' > ');
+    throw new Error(`${e.message} (connection phases: ${tail}; now ${JSON.stringify(c.connection)})`);
+  } finally {
+    c.stop();
+  }
 });
 
 test('a wrong token is reported as auth-failed, not offline', async () => {
