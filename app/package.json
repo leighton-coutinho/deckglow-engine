@@ -11,7 +11,7 @@
     "start": "npm run build && electron .",
     "mock": "node scripts/run-mock.mjs",
     "web": "npm run build && node scripts/dev-server.mjs",
-    "test": "npm run build && node --test --test-timeout=60000 test/",
+    "test": "npm run build && node --test --test-timeout=60000 \"test/*.test.mjs\"",
     "smoke": "npm run build && electron . --smoke=out/smoke.png",
     "stage": "node scripts/stage.mjs",
     "pack": "npm run build && npm run stage && electron-builder --win --x64 --dir",

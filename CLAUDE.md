@@ -693,7 +693,8 @@ script of mine left its socket timeout short and its final restore timed out
 on the client side; TouchDesigner had applied it anyway (checked).
 
 **Desktop app — step 5 (packaging, setup, CI): done and verified on this
-machine** (2026-11-07); the GitHub workflows have not run on GitHub yet. See the top-level
+machine** (2026-11-07); CI's engine job passes on GitHub, the test job's fix
+is not pushed yet, and the release workflow has not run. See the top-level
 [README.md](README.md) and [app/README.md](app/README.md) "Setup and
 packaging".
 
@@ -737,7 +738,12 @@ packaging".
   fallback, `npm test`, `check_contract.py`) and `release.yml` (tag `v*` =
   `app/package.json` version → tests, `npm run dist`, **draft** release via
   `gh`). Pack/library tests skip with a reason where `toeexpand` is absent.
-  Not run on GitHub yet.
+  **First CI run (2026-11-08):** the engine built on `windows-latest` with
+  the v145 toolset directly (no fallback), 334,336 bytes like here; `npm
+  test` failed because the runner's Node 22 takes `node --test test/` as a
+  file path (Node 26 here accepts a folder) — the script now passes the glob
+  `"test/*.test.mjs"`. Actions moved off the deprecated Node 20 majors
+  (checkout/setup-node/setup-python/upload-artifact v7, setup-msbuild v3).
 - No licence file in the repo — the owner's decision.
 
 Verified so far: `npm test` 21/21; dev smoke 24/24 against the mock (adds
