@@ -231,5 +231,22 @@ dialog.wide { max-width: 640px; width: calc(100% - 48px); }
 .midi-learning .midi-binding { color: var(--warn); }
 .midi-learning { background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 6px; }
 
+/* ---------------------------------------------------------------- setup */
+.btn-engine[aria-pressed="true"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+#setup-open.needs-attention { color: var(--warn); border-color: var(--warn); }
+.setup-dialog { max-width: 720px; }
+.setup-rows { display: grid; gap: 10px; margin: 14px 0; }
+.setup-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+.setup-icon { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.setup-ok .setup-icon { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.setup-todo .setup-icon { color: var(--accent); border-color: var(--accent); }
+.setup-wait .setup-icon { color: var(--warn); border-color: var(--warn); }
+.setup-body strong { display: block; margin-bottom: 2px; }
+.setup-text p { margin: 2px 0; }
+.setup-text input { width: 100%; margin-top: 6px; }
+.setup-text a { color: #9dbbff; }
+.setup-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 120px; }
+.setup-log { margin: 6px 0 0; padding: 6px 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font-size: 11px; color: var(--muted); white-space: pre-wrap; max-height: 80px; overflow: auto; }
+
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2e3a; border-radius: 5px; border: 2px solid var(--bg); }

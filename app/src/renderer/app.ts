@@ -10,8 +10,9 @@ import { $, el, toast } from './dom.js';
 import { createLibrary } from './library.js';
 import { createLooks } from './looks.js';
 import { createMidi } from './midi.js';
+import { createSetup } from './setup.js';
 import { api } from './platform.js';
-import { runSmoke } from './smoke.js';
+import { runSetupSmoke, runSmoke } from './smoke.js';
 import { CONFIRM_STROBE, SLOTS } from '../shared/api.js';
 import type {
   ContractInfo, ControlDecl, ControlValue, Library, LibraryModule, RuntimeStatus, ShowState, SlotName,
@@ -90,6 +91,8 @@ let state: ShowState | null = null;
 let libraryPanel: ReturnType<typeof createLibrary>;
 let looksPanel: ReturnType<typeof createLooks>;
 let midi: ReturnType<typeof createMidi>;
+let setupPanel: ReturnType<typeof createSetup> | undefined;
+let lastStatus: RuntimeStatus | null = null;
 
 async function send(msg: Record<string, unknown>, quiet = false): Promise<any> {
   try {
@@ -165,7 +168,8 @@ function showConnection(c: Connection): void {
     connecting: 'Connecting…', open: 'Connected', offline: 'TouchDesigner offline',
     'auth-failed': 'Token refused', stopped: 'Stopped',
   };
-  pill.textContent = texts[c.phase];
+  // no token file at all means nothing is set up yet, not a refused key
+  pill.textContent = c.phase === 'auth-failed' && /no bridge token/.test(c.reason) ? 'Not set up' : texts[c.phase];
   pill.className = 'pill ' + (c.phase === 'open' ? 'pill-ok' : c.phase === 'connecting' ? 'pill-wait' : 'pill-bad');
   pill.title = 'reason' in c ? `${c.reason} - retrying in ${(c.retryInMs / 1000).toFixed(1)} s` : '';
   document.body.classList.toggle('offline', c.phase !== 'open');
@@ -489,11 +493,13 @@ async function main(): Promise<void> {
       if (c.phase === 'open') {
         void libraryPanel.load();
         void bridge.subscribe({ status: true, preview: { fps: 15, width: 640 } }).catch(() => undefined);
+        void setupPanel?.restorePending();
       }
       libraryPanel.render();
+      void setupPanel?.refresh();
     },
     onState: applyState,
-    onStatus: (st) => { applyStatus(st); looksPanel?.onStatus(st); },
+    onStatus: (st) => { lastStatus = st; applyStatus(st); looksPanel?.onStatus(st); setupPanel?.onStatus(st); },
     onPreview: applyPreview,
     onEvent: (m) => libraryPanel.onEvent(m),
   });
@@ -507,9 +513,14 @@ async function main(): Promise<void> {
   looksPanel.setup();
   midi = createMidi({ api, press: midiPress, value: midiValue });
   await midi.setup();
+  setupPanel = createSetup({ api, bridge, state: () => state, status: () => lastStatus });
   bridge.start();
+  void setupPanel.setup(!config.smoke);      // opens by itself on a first run (never in a smoke run)
   (window as any).__deckglow = { bridge, get previewFrames() { return previewFrames; }, get library() { return library; }, libraryPanel, looksPanel, midi };
-  if (config.smoke) {
+  if (config.smokeSetup) {
+    void runSetupSmoke(api, setupPanel, config.smokeLaunch ? { bridge, library: () => library, status: () => lastStatus } : undefined)
+      .then((r) => api.smokeDone(r));
+  } else if (config.smoke) {
     void runSmoke(bridge, () => previewFrames, () => library, { api, pack: config.smokePack ?? null, panel: libraryPanel }, midi)
       .then((r) => api.smokeDone(r));
   }

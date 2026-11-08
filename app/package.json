@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "DeckGlow desktop app: drives the TouchDesigner runtime over deckglow.control/1.",
+  "author": "DeckGlow",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "node scripts/clean.mjs && tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && node scripts/copy-static.mjs",
@@ -11,11 +12,47 @@
     "mock": "node scripts/run-mock.mjs",
     "web": "npm run build && node scripts/dev-server.mjs",
     "test": "npm run build && node --test --test-timeout=60000 test/",
-    "smoke": "npm run build && electron . --smoke=out/smoke.png"
+    "smoke": "npm run build && electron . --smoke=out/smoke.png",
+    "stage": "node scripts/stage.mjs",
+    "pack": "npm run build && npm run stage && electron-builder --win --x64 --dir",
+    "dist": "npm run build && npm run stage && electron-builder --win --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.deckglow.app",
+    "productName": "DeckGlow",
+    "copyright": "DeckGlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/main/**",
+      "dist/shared/**",
+      "dist/web/**",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "build/runtime", "to": "runtime" },
+      { "from": "build/engine", "to": "engine" }
+    ],
+    "asar": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "DeckGlow-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeckGlow",
+      "deleteAppDataOnUninstall": false
+    }
   },
   "devDependencies": {
     "@types/node": "24.19.2",
     "electron": "44.9.3",
+    "electron-builder": "26.18.0",
     "typescript": "6.0.3"
   }
 }

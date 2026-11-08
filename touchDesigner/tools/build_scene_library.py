@@ -862,7 +862,12 @@ def LoadApproved(host, key):
     if h is None:
         print('no host %%s' %% host)
         return False
-    h.par.Modulepath = os.path.join(_module_dir(folder), manifest['entry']).replace('\\', '/')
+    full = os.path.normpath(os.path.join(_module_dir(folder), manifest['entry']))
+    root = os.path.normpath(project.folder)
+    # relative to the project folder, so a saved project works from any folder
+    if os.path.normcase(full).startswith(os.path.normcase(root) + os.sep):
+        full = os.path.relpath(full, root)
+    h.par.Modulepath = full.replace('\\', '/')
     h.par.Moduletype = static['type']
     h.par.Load.pulse()
     print('loading %%s into %%s' %% (static['id'], host))

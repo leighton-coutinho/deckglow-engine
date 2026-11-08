@@ -40,6 +40,74 @@ function setSwitch(sel: string, on: boolean): void {
   if (box.checked !== on) box.click();
 }
 
+/** `--smoke-setup`: the installed app's first run - Setup opens with the runtime
+ *  missing, Install copies it, and the checklist turns green for it. */
+export async function runSetupSmoke(api: DeckglowApi, setup: { open(): void },
+  launch?: { bridge: BridgeClient; library: () => Library; status: () => import('../shared/api.js').RuntimeStatus | null }): Promise<{ ok: boolean; steps: string[] }> {
+  const steps: string[] = [];
+  let ok = true;
+  const step = async (label: string, fn: () => Promise<void>) => {
+    try { await fn(); steps.push(`ok   ${label}`); } catch (e) { ok = false; steps.push(`FAIL ${label}: ${(e as Error).message}`); }
+  };
+  let before: Awaited<ReturnType<DeckglowApi['setupInfo']>> | null = null;
+  await step('installed app, runtime not installed yet', async () => {
+    before = await api.setupInfo();
+    if (before.mode !== 'installed') throw new Error(`mode is ${before.mode}`);
+    if (before.installed) throw new Error(`a runtime is already in ${before.root}`);
+    if (!before.bundledVersion) throw new Error('no bundled runtime');
+    if (!before.engine.exe?.includes('resources')) throw new Error(`engine not from the bundle: ${before.engine.exe}`);
+  });
+  if (!ok) return { ok, steps };
+  await step('setup opens, row 2 offers Install', async () => {
+    setup.open();
+    await waitFor('row 2', () => !!document.querySelector('[data-test="setup-2"] .btn-primary'), 8000);
+    if (!q('[data-test="setup-2"]').classList.contains('setup-todo')) throw new Error('row 2 not to-do');
+  });
+  await step('Install copies the runtime; row 2 turns green', async () => {
+    q<HTMLButtonElement>('[data-test="setup-2"] .btn-primary').click();
+    await waitFor('row 2 ok', () => q('[data-test="setup-2"]').classList.contains('setup-ok'), 20000);
+    const after = await api.setupInfo();
+    if (!after.installed || after.version !== before!.bundledVersion) throw new Error(`installed ${after.installed}, version ${after.version}`);
+    if (!after.project?.endsWith('engine_input_block1.toe')) throw new Error(`project ${after.project}`);
+  });
+  await step('the app reads the installed runtime (contract)', async () => {
+    if (!(await api.contract())?.performer?.length) throw new Error('no contract from the installed runtime');
+  });
+  await step('a second install is refused', async () => {
+    const r = await api.installRuntime().then(() => 'installed', (e: Error) => e.message);
+    if (!/already/.test(r)) throw new Error(r);
+  });
+  if (launch && ok) {
+    const root = (await api.setupInfo()).root!.replace(/\\/g, '/').toLowerCase();
+    await step('Open DeckGlow in TouchDesigner: fresh token, connected', async () => {
+      if ((await api.setupInfo()).touchDesignerRunning) throw new Error('close TouchDesigner first');
+      q<HTMLButtonElement>('[data-test="setup-3"] .btn-primary').click();
+      await waitFor('connected', () => launch.bridge.isOpen, 120000);
+      await waitFor('row 3 green', () => q('[data-test="setup-3"]').classList.contains('setup-ok'), 8000);
+    });
+    await step('every layer loads its module from the installed folder', async () => {
+      const lib = launch.library();
+      await waitFor('library from the new folder', () => launch.library().modules.length > 0, 30000);
+      const outside = launch.library().modules.filter((m) => !m.thumbnail.replace(/\\/g, '/').toLowerCase().startsWith(root));
+      if (outside.length) throw new Error(`modules outside ${root}: ${outside.map((m) => m.thumbnail).join(', ')}`);
+      await waitFor('all four slots ok', () => {
+        const s = launch.status();
+        return !!s?.slots && ['base_scene', 'hit_fx', 'brand_overlay', 'finish_fx'].every((k) => /^ok/.test(s.slots![k]?.status ?? ''));
+      }, 30000);
+      void lib;
+    });
+    await step('the bundled engine starts and stops', async () => {
+      await api.startEngine();
+      const end = Date.now() + 8000;
+      while (Date.now() < end && !(await api.setupInfo()).engine.running) await sleep(300);
+      if (!(await api.setupInfo()).engine.running) throw new Error('engine did not start');
+      await api.stopEngine();
+    });
+  }
+  await sleep(800);
+  return { ok, steps };
+}
+
 export interface MidiSmoke {
   mapper: { settings: MidiSettings; learn(id: string | null): void };
   handle(data: ArrayLike<number>, device: string | null): void;
@@ -224,6 +292,25 @@ export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: 
       if (moduleIds.some((m) => lib().modules.some((x) => x.id === m))) throw new Error('modules still listed');
     });
   }
+  const setup0 = packs ? await packs.api.setupInfo() : null;
+  if (packs && setup0?.engine.exe && !setup0.engine.running) {
+    await step('engine: starts from the app, listens, stops on request', async () => {
+      const lines: string[] = [];
+      packs.api.onEngine((ev) => { if (ev.type === 'log') lines.push(ev.line); });
+      await packs.api.startEngine();
+      await waitFor('engine output', () => lines.some((l) => /Listening to system audio/.test(l)), 10000);
+      if (!(await packs.api.setupInfo()).engine.running) throw new Error('not running');
+      await packs.api.stopEngine();
+      const end = Date.now() + 8000;
+      while (Date.now() < end && (await packs.api.setupInfo()).engine.running) await sleep(300);
+      if ((await packs.api.setupInfo()).engine.running) throw new Error('still running after stop');
+    });
+  }
+  await step('setup: checklist finds TouchDesigner and the connection', async () => {
+    q<HTMLButtonElement>('[data-test="setup-open"]').click();
+    await waitFor('setup rows', () => document.querySelectorAll('[data-test^="setup-"].setup-row').length === 6, 8000);
+    await waitFor('rows 1-3 green', () => ['1', '2', '3'].every((n) => q(`[data-test="setup-${n}"]`).classList.contains('setup-ok')), 8000);
+  });                                               // left open for the screenshot
   await sleep(1200);                                // a fresh preview frame for the screenshot
   return { ok, steps };
 }

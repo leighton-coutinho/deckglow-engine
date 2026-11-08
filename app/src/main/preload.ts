@@ -21,6 +21,16 @@ const api: DeckglowApi = {
   listPacks: () => ipcRenderer.invoke('deckglow:listPacks'),
   getSettings: () => ipcRenderer.invoke('deckglow:getSettings'),
   setSettings: (s) => ipcRenderer.invoke('deckglow:setSettings', s),
+  setupInfo: () => ipcRenderer.invoke('deckglow:setupInfo'),
+  installRuntime: () => ipcRenderer.invoke('deckglow:installRuntime'),
+  updateRuntime: () => ipcRenderer.invoke('deckglow:updateRuntime'),
+  launchTouchDesigner: () => ipcRenderer.invoke('deckglow:launchTouchDesigner'),
+  browseTouchDesigner: () => ipcRenderer.invoke('deckglow:browseTouchDesigner'),
+  startEngine: () => ipcRenderer.invoke('deckglow:startEngine'),
+  stopEngine: () => ipcRenderer.invoke('deckglow:stopEngine'),
+  engineLog: () => ipcRenderer.invoke('deckglow:engineLog'),
+  // only the event payload reaches the page, never the IPC event object
+  onEngine: (cb) => { ipcRenderer.on('deckglow:engine', (_e, ev) => cb(ev)); },
 };
 
 contextBridge.exposeInMainWorld('deckglow', api);

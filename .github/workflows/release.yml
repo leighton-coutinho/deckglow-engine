@@ -1,0 +1,65 @@
+# Push a tag like v0.2.0 (matching app/package.json "version") to build the
+# Windows installer and attach it to a DRAFT GitHub release. Nothing is
+# published until the draft is reviewed and published by hand.
+#
+# The installer is unsigned (no code-signing certificate), so Windows
+# SmartScreen warns on first run ("More info" -> "Run anyway").
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $v = (Get-Content app/package.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} does not match app/package.json version $v" }
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build the engine
+        shell: pwsh
+        run: |
+          msbuild ReactiveVisualEngine.vcxproj -p:Configuration=Release -p:Platform=x64 -m -nologo -v:minimal
+          if ($LASTEXITCODE -ne 0) {
+            msbuild ReactiveVisualEngine.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 -m -nologo -v:minimal
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test, stage and package
+        working-directory: app
+        run: |
+          npm ci
+          npm test
+          npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: app/release/DeckGlow-Setup-*.exe
+          retention-days: 30
+      - name: Draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = Get-ChildItem app/release/DeckGlow-Setup-*.exe | Select-Object -First 1
+          gh release create "${{ github.ref_name }}" $exe.FullName --draft --title "DeckGlow ${{ github.ref_name }}" `
+            --notes "Windows installer. Needs TouchDesigner (installed separately). Unsigned: Windows SmartScreen asks for confirmation on first run."

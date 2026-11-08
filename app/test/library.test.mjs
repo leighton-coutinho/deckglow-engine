@@ -3,11 +3,19 @@
 // then validate / approve / load / revoke through the mock bridge, which runs
 // the runtime's real protocol code. Nothing touches the runtime's own files:
 // the pack installs into a temp folder and the mock keeps approvals in memory.
-import { test, before, after } from 'node:test';
+import * as nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+
+// pack_tool.py inspects every module .tox with TouchDesigner's toeexpand: these
+// tests need TouchDesigner installed, so they skip (with a reason) on a CI runner.
+const TOEEXPAND = process.env.DECKGLOW_TOEEXPAND || 'C:/Program Files/Derivative/TouchDesigner/bin/toeexpand.exe';
+const HAVE_TD = existsSync(TOEEXPAND);
+const test = HAVE_TD ? nodeTest.test : (name, fn) => nodeTest.test(name, { skip: 'needs TouchDesigner (toeexpand)' }, fn);
+const before = HAVE_TD ? nodeTest.before : () => undefined;
+const after = HAVE_TD ? nodeTest.after : () => undefined;
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';

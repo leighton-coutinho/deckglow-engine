@@ -106,10 +106,40 @@ dropped on the window (the preload turns a real dropped `File` into its path;
 a page cannot invent one), and removes only well-formed, non-`com.deckglow`
 pack ids.
 
+## Setup and packaging
+
+In a repository checkout the app uses the repository's `touchDesigner/`
+folder and the engine in `x64/Release` (or `Debug`). Installed, it ships a
+read-only runtime (`resources/runtime`) and the engine (`resources/engine`);
+**Setup** (opens by itself on the first run; the header's Setup button)
+copies the runtime to `Documents\DeckGlow`, finds TouchDesigner (or lets you
+point at `TouchDesigner.exe`), opens the project with a fresh bridge token
+(only when TouchDesigner is not already running - a running bridge read its
+token at start), starts and stops the audio engine (the header's Engine
+button too; an engine the app started stops with the app), sets your name
+and opens the projector output.
+
+Updating keeps the person's data: the program parts (tools, first-party
+modules, docs, examples, the project) are replaced with the old ones moved to
+`backups/runtime-<time>/`; Packs, approvals (first-party entries refreshed),
+pack validation reports and the token stay. The show is saved before and
+re-applied after the next connect. TouchDesigner must be closed to update.
+
+| Command | Does |
+| --- | --- |
+| `npm run stage` | Collects the runtime and the Release engine into `build/` - the program only (first-party modules, approvals and reports; no packs, token, backups or Stub Scene). |
+| `npm run pack` | `release/win-unpacked/` - the installed app, unzipped. |
+| `npm run dist` | `release/DeckGlow-Setup-<version>.exe` - per-user NSIS installer, no admin rights, unsigned. |
+
+Overrides for tests: `DECKGLOW_RUNTIME_DIR` (runtime folder),
+`DECKGLOW_SETTINGS` (settings file), `DECKGLOW_TD` (TouchDesigner.exe),
+`DECKGLOW_ENGINE` (engine exe), `DECKGLOW_ROOT` (use any folder as the
+runtime). `--smoke=<png> --smoke-setup` tests the first-run install;
+add `--smoke-launch` to also open TouchDesigner on the installed copy and
+check every module loads from it (close TouchDesigner first).
+
 ## Not yet
 
-- Launching TouchDesigner, and writing a fresh token before it starts (the
-  contract's intended order) - for now, open the project yourself.
-- Installer and setup wizard.
+- Code signing (SmartScreen warns on first run), an app icon, auto-update.
 - MIDI output (lighting a controller's pads to show the current look), soft
   takeover for faders that jump when the controller and the app disagree.

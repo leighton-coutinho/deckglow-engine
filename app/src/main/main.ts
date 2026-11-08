@@ -3,13 +3,15 @@
 // The renderer is a sandboxed page served from app://deckglow/ (never file://).
 // It talks to the TouchDesigner runtime directly over the deckglow.control/1
 // WebSocket; this process only does what a page must not: read the bridge
-// token and module thumbnails from disk, and show file dialogs for show files.
+// token and module thumbnails from disk, show file dialogs, run pack_tool.py,
+// install the runtime, and start TouchDesigner and the audio engine.
 
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
+import { Runtime } from './runtime';
 import type { AppConfig, AppSettings, ContractInfo, ControlDecl, PackResult, ShowState } from '../shared/api';
 
 const SHOW_SCHEMA = 'deckglow.show/1';
@@ -23,22 +25,32 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
-/** The repository (or install) folder that holds touchDesigner/. */
-function findRoot(): string | null {
-  const fromEnv = process.env.DECKGLOW_ROOT;
-  if (fromEnv && existsSync(path.join(fromEnv, 'touchDesigner'))) return path.resolve(fromEnv);
-  let dir = app.getAppPath();
-  for (let i = 0; i < 6; i++) {
-    if (existsSync(path.join(dir, 'touchDesigner', 'engine_input_block1.toe'))) return dir;
-    const up = path.dirname(dir);
-    if (up === dir) break;
-    dir = up;
+// ------------------------------------------------------------ settings
+// The MIDI mapping and other per-computer choices; DECKGLOW_SETTINGS for tests.
+const SETTINGS_FILE = process.env.DECKGLOW_SETTINGS || path.join(app.getPath('userData'), 'settings.json');
+
+function readSettings(): AppSettings & Record<string, any> {
+  try {
+    const v = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'));
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
   }
-  return null;
 }
 
-const ROOT = findRoot();
-const TD_DIR = ROOT ? path.join(ROOT, 'touchDesigner') : null;
+function writeSettings(value: Record<string, unknown>): void {
+  const text = JSON.stringify(value ?? {}, null, 2);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || text.length > 256 * 1024) throw new Error('settings must be a small object');
+  mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  writeFileSync(SETTINGS_FILE, text + '\n', 'utf8');
+}
+
+// The runtime folder (repository in development, Documents\DeckGlow once
+// installed) can change while the app runs - setup installs it - so every use
+// asks the Runtime instead of keeping a path from startup.
+const runtime = new Runtime(readSettings);
+const rootDir = () => runtime.root;
+const tdDir = () => runtime.tdDir;
 
 function inside(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
@@ -46,9 +58,10 @@ function inside(child: string, parent: string): boolean {
 }
 
 function readToken(): string | null {
-  if (!TD_DIR) return null;
+  const td = tdDir();
+  if (!td) return null;
   try {
-    const t = readFileSync(path.join(TD_DIR, 'bridge_token.txt'), 'utf8').trim();
+    const t = readFileSync(path.join(td, 'bridge_token.txt'), 'utf8').trim();
     return t || null;
   } catch {
     return null;
@@ -56,9 +69,10 @@ function readToken(): string | null {
 }
 
 function readContract(): ContractInfo | null {
-  if (!ROOT) return null;
+  const root = rootDir();
+  if (!root) return null;
   try {
-    const c = JSON.parse(readFileSync(path.join(ROOT, 'docs', 'contract', 'deckglow.scene-module-1.json'), 'utf8'));
+    const c = JSON.parse(readFileSync(path.join(root, 'docs', 'contract', 'deckglow.scene-module-1.json'), 'utf8'));
     const slotParameters: Record<string, ControlDecl[]> = {};
     for (const [slot, spec] of Object.entries<any>(c.slots)) {
       slotParameters[slot] = (spec.parameters || []).map((p: any): ControlDecl => {
@@ -82,9 +96,10 @@ function readContract(): ContractInfo | null {
 }
 
 function thumbnail(p: unknown): string | null {
-  if (typeof p !== 'string' || !TD_DIR) return null;
+  const td = tdDir();
+  if (typeof p !== 'string' || !td) return null;
   const full = path.resolve(p);
-  const roots = [TD_DIR, ...(process.env.DECKGLOW_PACKS ? [path.resolve(process.env.DECKGLOW_PACKS)] : [])];
+  const roots = [td, ...(process.env.DECKGLOW_PACKS ? [path.resolve(process.env.DECKGLOW_PACKS)] : [])];
   if (!roots.some((r) => inside(full, r)) || path.extname(full).toLowerCase() !== '.png') return null;
   try {
     if (statSync(full).size > 4 * 1024 * 1024) return null;
@@ -98,20 +113,25 @@ function thumbnail(p: unknown): string | null {
 const PACK_ID = /^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_-]*)+$/;
 const pickedPacks = new Set<string>();      // only these files may be inspected or installed
 
-function findPython(): string {
-  for (const c of [process.env.DECKGLOW_PYTHON, 'C:/Program Files/Derivative/TouchDesigner/bin/python.exe']) {
-    if (c && existsSync(c)) return c;
-  }
-  return process.platform === 'win32' ? 'python' : 'python3';
+/** pack_tool.py runs on TouchDesigner's own Python, next to its toeexpand. */
+function tdTools(): { python: string; toeexpand: string | null } {
+  const exe = runtime.touchDesignerExe();
+  const bin = exe ? path.dirname(exe) : null;
+  const py = [process.env.DECKGLOW_PYTHON, bin && path.join(bin, 'python.exe')].find((c) => c && existsSync(c));
+  const tx = bin && existsSync(path.join(bin, 'toeexpand.exe')) ? path.join(bin, 'toeexpand.exe') : null;
+  return { python: py || (process.platform === 'win32' ? 'python' : 'python3'), toeexpand: tx };
 }
 
 function packTool(args: string[]): Promise<PackResult> {
-  if (!TD_DIR) return Promise.resolve({ ok: false, command: args[0], message: 'runtime folder not found' });
-  const tool = path.join(TD_DIR, 'tools', 'pack_tool.py');
+  const td = tdDir();
+  if (!td) return Promise.resolve({ ok: false, command: args[0], message: 'the DeckGlow runtime is not installed - open Setup' });
+  const tool = path.join(td, 'tools', 'pack_tool.py');
   // DECKGLOW_PACKS: a test install folder (default touchDesigner/Packs, where TD looks)
   const where = process.env.DECKGLOW_PACKS ? ['--packs', process.env.DECKGLOW_PACKS] : [];
+  const { python, toeexpand } = tdTools();
+  const env = { ...process.env, ...(toeexpand ? { DECKGLOW_TOEEXPAND: toeexpand } : {}) };
   return new Promise((resolve) => {
-    execFile(findPython(), ['-I', tool, '--json', ...where, ...args], { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+    execFile(python, ['-I', tool, '--json', ...where, ...args], { timeout: 180000, windowsHide: true, maxBuffer: 8 * 1024 * 1024, env },
       (err, stdout, stderr) => {
         const line = stdout.trim().split(/\r?\n/).pop() || '';
         try {
@@ -141,19 +161,6 @@ function pickedPack(p: unknown): string {
   return p;
 }
 
-// ------------------------------------------------------------ settings
-// The MIDI mapping and other per-computer choices; DECKGLOW_SETTINGS for tests.
-const SETTINGS_FILE = process.env.DECKGLOW_SETTINGS || path.join(app.getPath('userData'), 'settings.json');
-
-function readSettings(): AppSettings {
-  try {
-    const v = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'));
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
-}
-
 function checkShow(value: unknown): ShowState {
   if (!value || typeof value !== 'object' || (value as any).schema !== SHOW_SCHEMA) {
     throw new Error(`not a ${SHOW_SCHEMA} show file`);
@@ -162,11 +169,14 @@ function checkShow(value: unknown): ShowState {
 }
 
 function registerIpc(win: BrowserWindow): void {
-  const config: AppConfig = {
-    url: `ws://127.0.0.1:${PORT}/`, root: ROOT, smoke: !!SMOKE, version: app.getVersion(),
+  const config = (): AppConfig => ({
+    url: `ws://127.0.0.1:${PORT}/`, root: rootDir(), smoke: !!SMOKE, version: app.getVersion(),
     smokePack: SMOKE_PACK ? registerPack(SMOKE_PACK) : null,
-  };
-  ipcMain.handle('deckglow:config', () => config);
+    // --smoke-setup: only the first-run install, no runtime needed
+    smokeSetup: !!SMOKE && process.argv.includes('--smoke-setup'),
+    smokeLaunch: !!SMOKE && process.argv.includes('--smoke-launch'),
+  });
+  ipcMain.handle('deckglow:config', () => config());
   ipcMain.handle('deckglow:token', () => readToken());
   ipcMain.handle('deckglow:contract', () => readContract());
   ipcMain.handle('deckglow:thumbnail', (_e, p) => thumbnail(p));
@@ -212,10 +222,34 @@ function registerIpc(win: BrowserWindow): void {
   ipcMain.handle('deckglow:listPacks', () => packTool(['list']));
   ipcMain.handle('deckglow:getSettings', () => readSettings());
   ipcMain.handle('deckglow:setSettings', (_e, value) => {
-    const text = JSON.stringify(value ?? {}, null, 2);
-    if (!value || typeof value !== 'object' || Array.isArray(value) || text.length > 256 * 1024) throw new Error('settings must be a small object');
-    writeFileSync(SETTINGS_FILE, text + '\n', 'utf8');
+    // the runtime folder and TouchDesigner path are set by setup only
+    const keep = readSettings();
+    writeSettings({ ...value, runtimeDir: keep.runtimeDir, touchDesignerExe: keep.touchDesignerExe });
   });
+
+  // ------------------------------------------------- setup and launching
+  ipcMain.handle('deckglow:setupInfo', () => runtime.info());
+  ipcMain.handle('deckglow:installRuntime', () => runtime.install());
+  ipcMain.handle('deckglow:updateRuntime', () => runtime.update());
+  ipcMain.handle('deckglow:launchTouchDesigner', () => runtime.launchTouchDesigner());
+  ipcMain.handle('deckglow:browseTouchDesigner', async () => {
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Find TouchDesigner.exe',
+      defaultPath: path.join(process.env.ProgramFiles || 'C:/Program Files', 'Derivative'),
+      filters: [{ name: 'TouchDesigner', extensions: ['exe'] }],
+      properties: ['openFile'],
+    });
+    const f = r.filePaths?.[0];
+    if (r.canceled || !f) return null;
+    if (path.basename(f).toLowerCase() !== 'touchdesigner.exe') throw new Error('choose TouchDesigner.exe (in TouchDesigner\'s bin folder)');
+    writeSettings({ ...readSettings(), touchDesignerExe: f });
+    return f;
+  });
+  ipcMain.handle('deckglow:startEngine', () => runtime.startEngine());
+  ipcMain.handle('deckglow:stopEngine', () => runtime.stopEngine());
+  ipcMain.handle('deckglow:engineLog', () => runtime.engineLogTail());
+  runtime.onEngine = (ev) => { if (!win.isDestroyed()) win.webContents.send('deckglow:engine', ev); };
+
   ipcMain.handle('deckglow:smokeDone', async (_e, result: { ok: boolean; steps: string[] }) => {
     if (!SMOKE) return;
     const image = await win.webContents.capturePage();
@@ -245,14 +279,15 @@ function createWindow(): void {
   });
   win.once('ready-to-show', () => (SMOKE ? win.showInactive() : win.show()));
   registerIpc(win);
-  // The page may never navigate away or open windows; external links go to the browser.
+  // The page may never navigate away or open windows; https links go to the browser.
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://deckglow/')) e.preventDefault(); });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
   });
   if (SMOKE) {
-    setTimeout(() => { console.log('smoke: FAIL - timed out after 45 s'); app.exit(2); }, 45000);
+    const limit = process.argv.includes('--smoke-launch') ? 180 : 60;     // a TouchDesigner cold start is slow
+    setTimeout(() => { console.log(`smoke: FAIL - timed out after ${limit} s`); app.exit(2); }, limit * 1000);
     win.webContents.on('console-message', (e) => console.log('renderer:', e.message));
   }
   void win.loadURL('app://deckglow/renderer/index.html');
@@ -275,4 +310,12 @@ app.whenReady().then(() => {
   createWindow();
 });
 
+// An engine the app started stops with the app; TouchDesigner keeps running.
+let quitting = false;
+app.on('before-quit', (e) => {
+  if (quitting) return;
+  quitting = true;
+  e.preventDefault();
+  void runtime.stopEngine().finally(() => app.quit());
+});
 app.on('window-all-closed', () => app.quit());

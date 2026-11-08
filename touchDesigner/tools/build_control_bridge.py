@@ -72,7 +72,7 @@ P = op('protocol').module
 SLOT_HOST = {'base_scene': 'module_host', 'hit_fx': 'hit_host',
              'brand_overlay': 'brand_host', 'finish_fx': 'finish_host'}
 SLOT_PARAMS = %(slot_params)s
-TOKEN_FILE = %(token_file)r
+TOKEN_FILE = os.path.join(project.folder, 'bridge_token.txt')   # this computer's project folder
 STATUS_EVERY = 15                     # frames (4 per second at 60 fps)
 
 _g = {'proto': None, 'frame': 0, 'last_t': None, 'fps': 0.0, 'manifests': {}, 'next_preview': {}}
@@ -122,6 +122,90 @@ def OnHTTP(request, response):
         response['statusCode'], response['statusReason'] = 404, 'Not Found'
         response['data'] = ''
     return response
+
+
+# -------------------------------------------------------------- startup
+HOSTS_ALL = ('module_host', 'hit_host', 'module_host_b', 'hit_host_b', 'brand_host', 'finish_host')
+HOST_SLOT = {'module_host': 'base_scene', 'module_host_b': 'base_scene', 'hit_host': 'hit_fx',
+             'hit_host_b': 'hit_fx', 'brand_host': 'brand_overlay', 'finish_host': 'finish_fx'}
+
+
+def _relocate(path):
+    """A Modulepath as it should be stored: relative to this project folder.
+    A path saved on another computer or in another folder is mapped by the
+    part after its touchDesigner/ (or Packs/, modules/) folder."""
+    p = (path or '').replace('\\', '/').strip()
+    if not p or not os.path.isabs(p):
+        return p
+    root = project.folder.replace('\\', '/').rstrip('/') + '/'
+    if p.lower().startswith(root.lower()):
+        return p[len(root):]
+    for marker in ('/touchDesigner/', '/Packs/', '/modules/'):
+        i = p.find(marker)
+        if i >= 0:
+            rest = p[i + len(marker):] if marker == '/touchDesigner/' else p[i + 1:]
+            if os.path.isfile(os.path.join(project.folder, rest)):
+                return rest
+    return p
+
+
+def _apply(m, controls):
+    for name, value in (controls or {}).items():
+        if isinstance(value, list):
+            pars = [getattr(m.par, name + c, None) for c in 'rgb']
+            if all(x is not None for x in pars):
+                for x, v in zip(pars, value):
+                    x.val = v
+        elif getattr(m.par, name, None) is not None:
+            getattr(m.par, name).val = value
+
+
+def Startup():
+    """A moment after the project opens: make every module path relative to
+    this folder, rescan the library (its saved scan holds the folders of the
+    computer that saved it), refresh pack palettes, and reload any module whose
+    file is not where the saved project expected it."""
+    moved, reload = [], []
+    for name in HOSTS_ALL:
+        h = op('/project1/' + name)
+        if h is None:
+            continue
+        old = h.par.Modulepath.eval()
+        new = _relocate(old)
+        if new != old:
+            h.par.Modulepath = new
+            moved.append(name)
+        m = h.op('module')
+        ext = m.par.externaltox.eval() if m is not None else ''
+        if new and (m is None or m.op('out1') is None or not os.path.isfile(ext)):
+            reload.append(name)
+    lib = op('/project1/scene_library/library')
+    if lib is not None:
+        lib.module.Scan(quiet=True)
+    logic = op('/project1/palette_source/palette_logic')
+    if logic is not None and hasattr(logic.module, 'RefreshPacks'):
+        logic.module.RefreshPacks()
+    for name in reload:
+        op('/project1/' + name).par.Load.pulse()
+    if reload:
+        run("op(%%r).module._ReapplyControls(%%r)" %% (me.path, reload), delayFrames=10)
+    print('control_bridge: startup - %%d path(s) made relative, %%d module(s) reloaded, project %%s'
+          %% (len(moved), len(reload), project.folder))
+
+
+def _ReapplyControls(names):
+    """A reloaded module starts at its defaults: put back what the frontend set."""
+    looks = _looks()
+    for name in names:
+        h = op('/project1/' + name)
+        m = h.op('module') if h is not None else None
+        if m is None:
+            continue
+        if looks is not None and name in ('module_host', 'hit_host', 'module_host_b', 'hit_host_b'):
+            ctl = looks.op('look_logic').module.Controls(name)
+        else:
+            ctl = _desired().get(HOST_SLOT[name], {})
+        _apply(m, ctl)
 
 
 # --------------------------------------------------------------- frames
@@ -299,6 +383,8 @@ def _manifest_at(tox_path):
     """The module.json next to a loaded .tox (cached by path)."""
     if not tox_path:
         return None
+    if not os.path.isabs(tox_path):
+        tox_path = os.path.join(project.folder, tox_path)
     if tox_path not in _g['manifests']:
         try:
             with open(os.path.join(os.path.dirname(tox_path), 'module.json'), 'r', encoding='utf-8') as f:
@@ -623,6 +709,13 @@ def onServerStop(dat):
     print('control_bridge: stopped')
 '''
 
+FRAME_EXEC_START = r'''
+def onStart():
+    # let the project finish loading first (TouchDesigner initialises asynchronously)
+    run("op('runtime').module.Startup()", delayFrames=30)
+    return
+'''
+
 FRAME_EXEC = r'''
 def onFrameStart(frame):
     op('runtime').module.Frame()
@@ -676,8 +769,9 @@ def build():
 
     fx = b.create(executeDAT, 'frame_exec')
     fx.nodeX, fx.nodeY = 300, 0
-    fx.text = FRAME_EXEC
+    fx.text = FRAME_EXEC + FRAME_EXEC_START
     fx.par.framestart = True
+    fx.par.start = True          # onStart: Startup() makes the project relocatable
     fx.par.active = True
 
     src = b.create(selectTOP, 'preview_src')

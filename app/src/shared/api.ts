@@ -113,6 +113,10 @@ export interface AppConfig {
   smoke: boolean;
   /** Smoke runs only: a pack file registered as if picked, to install and remove. */
   smokePack?: string | null;
+  /** Smoke runs only: test the first-run install instead of the show. */
+  smokeSetup?: boolean;
+  /** With smokeSetup: also open TouchDesigner on the installed runtime and check it. */
+  smokeLaunch?: boolean;
   version: string;
 }
 
@@ -142,6 +146,21 @@ export interface ValidationReport {
   checks: { stage: string; check: string; status: string; detail: string }[];
 }
 
+/** Where the runtime and engine are, and what setup still has to do (main/runtime.ts). */
+export interface SetupInfo {
+  mode: 'repository' | 'installed' | 'custom';
+  root: string | null;
+  installed: boolean;
+  version: string | null;
+  bundledVersion: string | null;
+  updateAvailable: boolean;
+  project: string | null;
+  touchDesigner: { exe: string | null; version: string | null };
+  touchDesignerRunning: boolean;
+  engine: { exe: string | null; running: boolean; startedByApp: boolean };
+}
+export type EngineEvent = { type: 'log'; line: string } | { type: 'exit'; code: number | null };
+
 /** What the preload exposes as window.deckglow. Every call goes through IPC. */
 export interface DeckglowApi {
   config(): Promise<AppConfig>;
@@ -164,4 +183,14 @@ export interface DeckglowApi {
   /** App settings (MIDI mapping), kept in the app's user-data folder. */
   getSettings(): Promise<AppSettings>;
   setSettings(settings: AppSettings): Promise<void>;
+  /** Setup: the runtime folder, TouchDesigner and the audio engine. */
+  setupInfo(): Promise<SetupInfo>;
+  installRuntime(): Promise<string>;
+  updateRuntime(): Promise<{ root: string; backup: string }>;
+  launchTouchDesigner(): Promise<{ rotatedToken: boolean }>;
+  browseTouchDesigner(): Promise<string | null>;
+  startEngine(): Promise<void>;
+  stopEngine(): Promise<void>;
+  engineLog(): Promise<string[]>;
+  onEngine(cb: (ev: EngineEvent) => void): void;
 }

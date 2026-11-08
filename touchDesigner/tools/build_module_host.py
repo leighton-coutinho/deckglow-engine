@@ -36,6 +36,7 @@ ROOT = op('/project1')
 # its indentation is exactly what the DAT receives.
 HOST_LOGIC = '''
 # Lifecycle for the scene-module wrapper. See docs/SCENE_MODULE_SPEC.md s12.
+import os
 
 WIRING = {
     'base_scene':    ['in1_motion', 'in2_palette'],
@@ -76,17 +77,20 @@ def Load():
         return
 
     Unload()
+    # Modulepath is stored relative to the project folder (so the project runs
+    # from any folder on any computer); load it from here.
+    full = path if os.path.isabs(path) else os.path.join(project.folder, path)
 
     m = h.create(baseCOMP, 'module')
     m.nodeX, m.nodeY = 400, 0
     try:
         # externaltox makes this COMP *be* the tox root. loadTox is a fallback
         # because it can nest the tox as a child instead of replacing contents.
-        m.par.externaltox = path
+        m.par.externaltox = full
         m.par.enableexternaltox = True
         m.par.enableexternaltoxpulse.pulse()
         if m.op('out1') is None:
-            m.loadTox(path)
+            m.loadTox(full)
     except Exception as e:
         m.destroy()
         _status('error: load failed - %s' % e)

@@ -1,0 +1,61 @@
+# Every push and pull request: the engine compiles, the app's tests pass, and
+# the runtime still matches the frozen module contract.
+#
+# A GitHub runner has no TouchDesigner, so the pack/library tests (they need
+# TouchDesigner's toeexpand) skip with a reason; everything else runs.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine (Release x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build
+        shell: pwsh
+        run: |
+          # The project targets the VS 2026 toolset (v145); fall back to VS 2022's
+          # (v143) on a runner that does not have it yet.
+          msbuild ReactiveVisualEngine.vcxproj -p:Configuration=Release -p:Platform=x64 -m -nologo -v:minimal
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "retrying with PlatformToolset v143"
+            msbuild ReactiveVisualEngine.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 -m -nologo -v:minimal
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item x64/Release/ReactiveVisualEngine.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine
+          path: x64/Release/ReactiveVisualEngine.exe
+          retention-days: 14
+
+  app:
+    name: App tests and contract
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm test
+      - name: Contract check
+        run: python -I ../touchDesigner/tools/check_contract.py

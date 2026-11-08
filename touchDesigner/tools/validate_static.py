@@ -45,7 +45,21 @@ TAG_RE = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 PARAM_RE = re.compile(r'^[A-Z][a-z0-9]*$')      # TouchDesigner custom par naming
 ABS_PATH_RE = re.compile(rb'(?<![A-Za-z])[A-Za-z]:[/\\][^\s"\']{2,}|/Users/[^\s"\']+|/home/[^\s"\']+')
 
-DEFAULT_TOEEXPAND = r'C:\Program Files\Derivative\TouchDesigner\bin\toeexpand.exe'
+def find_toeexpand():
+    """TouchDesigner's toeexpand.exe: DECKGLOW_TOEEXPAND, the default install,
+    or the newest C:/Program Files/Derivative/TouchDesigner*/bin."""
+    env = os.environ.get('DECKGLOW_TOEEXPAND')
+    if env and os.path.isfile(env):
+        return env
+    base = os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'), 'Derivative')
+    found = [os.path.join(base, 'TouchDesigner', 'bin', 'toeexpand.exe')]
+    if os.path.isdir(base):
+        found += sorted((os.path.join(base, d, 'bin', 'toeexpand.exe') for d in os.listdir(base)
+                         if d.startswith('TouchDesigner')), reverse=True)
+    return next((f for f in found if os.path.isfile(f)), found[0])
+
+
+DEFAULT_TOEEXPAND = find_toeexpand()
 
 
 # --------------------------------------------------------------- helpers

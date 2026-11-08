@@ -111,6 +111,8 @@ def _module_id(host):
     if h is None or h.op('module') is None:
         return None
     path = h.par.Modulepath.eval()
+    if path and not os.path.isabs(path):
+        path = os.path.join(project.folder, path)
     try:
         with open(os.path.join(os.path.dirname(path), 'module.json'), 'r', encoding='utf-8') as f:
             return json.load(f).get('id')

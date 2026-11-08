@@ -67,6 +67,20 @@ function devApi(): DeckglowApi {
     setSettings: async (s) => {
       try { localStorage.setItem('deckglow-settings', JSON.stringify(s)); } catch { /* private window */ }
     },
+    // setup and launching need the desktop app
+    setupInfo: async () => ({
+      mode: 'repository', root: null, installed: true, version: null, bundledVersion: null, updateAvailable: false,
+      project: null, touchDesigner: { exe: null, version: null }, touchDesignerRunning: false,
+      engine: { exe: null, running: false, startedByApp: false },
+    }),
+    installRuntime: async () => { throw new Error('setup runs in the desktop app'); },
+    updateRuntime: async () => { throw new Error('setup runs in the desktop app'); },
+    launchTouchDesigner: async () => { throw new Error('launching TouchDesigner needs the desktop app'); },
+    browseTouchDesigner: async () => null,
+    startEngine: async () => { throw new Error('starting the engine needs the desktop app'); },
+    stopEngine: async () => undefined,
+    engineLog: async () => [],
+    onEngine: () => undefined,
   };
 }
 

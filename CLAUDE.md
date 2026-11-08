@@ -692,6 +692,78 @@ through the fade. Repeated cuts swap the stacks A → B → A, each reporting
 script of mine left its socket timeout short and its final restore timed out
 on the client side; TouchDesigner had applied it anyway (checked).
 
+**Desktop app — step 5 (packaging, setup, CI): done and verified on this
+machine** (2026-11-07); the GitHub workflows have not run on GitHub yet. See the top-level
+[README.md](README.md) and [app/README.md](app/README.md) "Setup and
+packaging".
+
+- **The runtime is relocatable** — it had absolute paths of this computer
+  baked in. Host `Modulepath` is stored relative to `project.folder`
+  (`LoadApproved` writes it so; host `Load()` resolves it; the bridge's
+  `_manifest_at` and `look_logic._module_id` too). The bridge's token file
+  is `project.folder/bridge_token.txt` at run time, not a path baked at build.
+  **`control_bridge` `Startup()` runs on every project open** (Execute DAT
+  `onStart`, 30 frames later): maps any absolute `Modulepath` to this folder
+  (by the part after `touchDesigner/`, else `Packs/`/`modules/`), rescans the
+  library (the saved scan in the `.toe` holds the saving computer's
+  folders), refreshes pack palettes, reloads hosts whose module file is not
+  where the project expected, then re-applies remembered controls.
+  `validate_static.find_toeexpand()` searches `DECKGLOW_TOEEXPAND`, the
+  default install and `Program Files/Derivative/TouchDesigner*/bin`.
+- **Engine Release build** links the C++ runtime statically (`/MT`, Release
+  x64 only): 334 KB, imports only kernel32/ole32/ws2_32 — no Visual C++
+  Redistributable needed. It quits on Enter on stdin (the app uses that).
+- **App** `src/main/runtime.ts`: runtime folder (repository in a checkout;
+  `Documents\DeckGlow` installed; `DECKGLOW_RUNTIME_DIR`/`DECKGLOW_ROOT`
+  overrides), install (copy the bundled runtime), update (program parts
+  replaced, old ones to `backups/runtime-<time>/`; Packs, approvals with
+  first-party entries refreshed, pack reports, token kept; refused while TD
+  runs; the renderer saves the show to settings `pendingRestore` first and
+  re-applies it on the next connect), TouchDesigner discovery (+ version via
+  file properties), **launch with a fresh token only when TD is not running**,
+  engine start/stop with its output streamed to the page; pack_tool runs on
+  TD's own `python.exe` with `DECKGLOW_TOEEXPAND` set.
+- **Setup wizard** (`setup.ts`): six-row checklist (TouchDesigner, runtime,
+  connected, audio engine + "hearing music", your name, projector), refreshes
+  every 2 s, opens itself on the first run or when something essential is
+  missing (never in smoke runs). Header gains Engine and Setup buttons.
+- **Installer** — electron-builder 26.18.0, per-user NSIS (no admin),
+  unsigned; `npm run stage` copies the program only (first-party modules,
+  approvals and reports; no Stub Scene, packs, token, backups, autosaves).
+  The shipped `.toe` is the repository's — **save it in TD after rebuilding
+  before staging a release**. It still carries the owner's brand edits
+  (KOUTINHO); Setup's name row is where a new DJ replaces it.
+- **GitHub Actions**: `ci.yml` (engine Release build with a v143 toolset
+  fallback, `npm test`, `check_contract.py`) and `release.yml` (tag `v*` =
+  `app/package.json` version → tests, `npm run dist`, **draft** release via
+  `gh`). Pack/library tests skip with a reason where `toeexpand` is absent.
+  Not run on GitHub yet.
+- No licence file in the repo — the owner's decision.
+
+Verified so far: `npm test` 21/21; dev smoke 24/24 against the mock (adds
+engine start → "Listening to system audio" → stop, and the setup checklist);
+packaged `release/win-unpacked` `--smoke-setup` 5/5 (installed mode, Install
+copies the bundled runtime to a temp folder, row turns green, contract read
+from the installed copy, second install refused); `_relocate` 6/6 cases
+outside TD; workflows parse as YAML.
+
+**Verified end to end on an installed copy** (after rebuilding the scene
+library, stack, look runtime and bridge in the repository's project,
+running `Startup()` once and saving): the packaged app
+(`release/win-unpacked`) with `DECKGLOW_RUNTIME_DIR` on an empty temp
+folder passed `--smoke-setup --smoke-launch` 8/8 - Install copied the
+runtime, "Open DeckGlow in TouchDesigner" wrote a fresh token and opened
+the copy, the app connected, every module's files came from the installed
+folder with all four layers `ok: 1280x720`, the bundled engine started and
+stopped. Then the full show smoke from the packaged app against that copy:
+24/24 (switches, looks fade and cut, MIDI, show restore, engine, setup
+checklist all green). `npm run dist` builds
+`release/DeckGlow-Setup-0.1.0.exe` (121 MB, nearly all Electron); the
+installer itself was not run here (it would install to the user's account).
+Testing quirk, not an app bug: when a shell pipes the app's stdout (`| grep`),
+the TouchDesigner the app launches inherits the pipe and the pipeline never
+ends - redirect to a file instead.
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -1167,8 +1239,10 @@ Every DJ running DeckGlow would need a suitable licence too.
   non-loopback connection at once and requires the token, but Windows may
   show a firewall prompt; block it there. Revisit if the Web Server DAT gains
   an address setting.
-- **Scripts hardcode absolute paths** containing a username. Fine on one
-  machine; derive from `project.folder` when a second machine appears.
+- ~~**Scripts hardcode absolute paths**~~ - the runtime is relocatable since
+  step 5 (relative `Modulepath`, run-time token path, `Startup()` on open).
+  Builder docstrings still show this machine's `exec(open(r'C:\Users\...'))`
+  lines; adjust the path when running them elsewhere.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.
 
 ## Conventions
