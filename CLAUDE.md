@@ -516,6 +516,47 @@ each host) were not re-run.
   live module switch. It now uses the last scan; `getLibrary` takes
   `rescan: true` for after installs.
 
+**Desktop app — step 2 (the app): done and verified** (2026-11-07).
+`app/` — Electron 44.9.3 + TypeScript 6.0.3, no bundler, no runtime
+dependencies; see [app/README.md](app/README.md). Preview, a switch, module
+menu, intensity and controls per layer, palette, custom background, name,
+six performance faders, output safety (max brightness, flashes/s, flash
+limiter behind a confirm dialog), Blackout (also the B key), live/demo + BPM,
+projector buttons, the library with thumbnails and approval state (only
+approved modules can be used), show save/open, lane meters, fps.
+
+- Every control sends a named request; the screen redraws from the runtime's
+  broadcast state, never from what it sent — controls being dragged or typed
+  into are left alone while held.
+- `src/renderer/bridge.ts` is the client: token re-read on every connection
+  (TD may recreate it), reconnect with backoff, subscriptions re-sent after a
+  reconnect, `auth-failed` reported apart from `offline`.
+- Main process reads the token, the frozen contract (slot parameters,
+  performer names, lanes) and module thumbnails (PNGs inside `touchDesigner/`
+  only); the page is sandboxed on `app://deckglow/` with a strict CSP.
+- **`touchDesigner/tools/mock_bridge.py`** — a stand-in bridge running the
+  real `bridge_protocol.py` with an in-memory show, the real library and
+  approvals; `bridge_client.py demo` passes 18/18 against it. It refuses to
+  start if anything answers on its port: on Windows it could otherwise bind
+  `127.0.0.1:9980` beside TD's `0.0.0.0:9980` and silently take the
+  loopback clients.
+
+Verified: `npm test` 6/6 against the mock (handshake, broadcasts, getState,
+six refusal codes, library, subscriptions surviving a runtime restart, wrong
+token); `npm run smoke` 14/14 in the real Electron window against the mock
+**and against the running TouchDesigner** — real switches, sliders, menus,
+the flash-limiter dialog and Blackout, every change seen in broadcast state,
+starting show restored; the screenshot shows TD's real output. UI checked by
+eye in the browser pane via `npm run web`. Bugs found on the way: `hidden`
+overridden by `display: grid`; the page taller than the window (grid row
+needed `minmax(0, 1fr)`, and the switches' absolutely positioned checkboxes
+had no positioned ancestor); smoke screenshots were stale because a hidden
+Electron window stops painting (smoke runs now show inactive with
+`backgroundThrottling` off).
+
+Not yet: the app launching TouchDesigner and writing a fresh token first (the
+contract's intended order), installer/setup wizard, crossfades, MIDI.
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -544,6 +585,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `build_control_bridge.py` | Builds `/project1/control_bridge`, the `deckglow.control/1` WebSocket server the desktop app talks to. Run after the stack, palette, brand, library and projector builders. |
 | `bridge_protocol.py` | Plain Python: the protocol logic, embedded in the bridge, tested outside TD with a fake adapter. |
 | `bridge_client.py` | Standard-library WebSocket client, **outside** TD: `state`, `send '<json>'`, `preview out.jpg`, `demo`. |
+| `mock_bridge.py` | Plain Python, **outside** TD: a stand-in control bridge (real protocol code, in-memory show) for developing the app without TouchDesigner. `--port` to move it; refuses a port already in use. |
 | `build_solid_background.py` | Builds and exports `modules/solid_background/` (palette background, pulsing toward primary on the beat). |
 | `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. |
 | `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |
@@ -982,6 +1024,11 @@ Every DJ running DeckGlow would need a suitable licence too.
   Resolved for the contract by Block 8 decision 4 (resolution independence,
   see *Decisions made*); the licence itself remains the owner's business
   decision.
+- **The TD control bridge listens on all interfaces** (`0.0.0.0:9980`): the
+  Web Server DAT has no bind-address parameter. The protocol closes every
+  non-loopback connection at once and requires the token, but Windows may
+  show a firewall prompt; block it there. Revisit if the Web Server DAT gains
+  an address setting.
 - **Scripts hardcode absolute paths** containing a username. Fine on one
   machine; derive from `project.folder` when a second machine appears.
 - `touchDesigner/Backup/` and numbered incremental saves are tracked and are noise.

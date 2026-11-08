@@ -1,0 +1,21 @@
+{
+  "name": "deckglow-app",
+  "productName": "DeckGlow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeckGlow desktop app: drives the TouchDesigner runtime over deckglow.control/1.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json && node scripts/copy-static.mjs",
+    "start": "npm run build && electron .",
+    "mock": "node scripts/run-mock.mjs",
+    "web": "npm run build && node scripts/dev-server.mjs",
+    "test": "npm run build && node --test test/",
+    "smoke": "npm run build && electron . --smoke=out/smoke.png"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "electron": "44.9.3",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' ws://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeckGlow</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo-dot"></span>DeckGlow</div>
+    <div id="connection" class="pill pill-wait" data-test="connection">Starting…</div>
+    <div id="fps" class="muted small"></div>
+    <div class="spacer"></div>
+    <div class="group" title="Where the music signal comes from">
+      <div class="segmented" id="engine-mode" role="radiogroup" aria-label="Audio source">
+        <button data-mode="live" role="radio">Live audio</button>
+        <button data-mode="demo" role="radio">Demo beat</button>
+      </div>
+      <label class="bpm" title="Tempo of the demo beat">
+        <input id="engine-bpm" type="number" min="40" max="240" step="1" value="120" aria-label="Demo BPM">
+        <span class="muted small">BPM</span>
+      </label>
+    </div>
+    <div class="group" aria-label="Projector">
+      <span class="muted small">Projector</span>
+      <button class="btn btn-quiet" data-projector="open" title="Open the output in a separate window">Window</button>
+      <button class="btn btn-quiet" data-projector="perform" title="TouchDesigner Perform Mode - the recommended way to show the output">Perform</button>
+      <button class="btn btn-quiet" data-projector="close" title="Close the output window">Close</button>
+    </div>
+    <button id="blackout" class="btn btn-blackout" data-test="blackout" aria-pressed="false" title="Turn the output black (B)">Blackout</button>
+  </header>
+
+  <main class="layout">
+    <section class="left">
+      <div class="card preview-card">
+        <div class="preview-frame">
+          <img id="preview" alt="Live output preview" data-test="preview">
+          <div id="preview-empty" class="preview-empty">No picture yet</div>
+          <div class="preview-badges">
+            <span id="badge-blackout" class="badge badge-danger" hidden>BLACKOUT</span>
+            <span id="badge-limiter" class="badge badge-warn" hidden title="The flash limiter is holding back a flash">Flash limited</span>
+          </div>
+        </div>
+        <div id="lanes" class="lanes" aria-label="Motion lanes"></div>
+      </div>
+      <div class="card">
+        <h2>Performance</h2>
+        <div id="performer" class="sliders"></div>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="card">
+        <h2>Layers <span class="muted small">top to bottom: what the audience sees, back to front</span></h2>
+        <div id="slots"></div>
+      </div>
+      <div class="card">
+        <h2>Colour</h2>
+        <div class="row">
+          <label class="field-label" for="palette">Palette</label>
+          <select id="palette" data-test="palette"></select>
+        </div>
+        <div class="row">
+          <label class="switch" title="Use your own background colour instead of the palette's">
+            <input type="checkbox" id="bg-custom" data-test="bg-custom"><span class="track"></span>
+            <span>Custom background</span>
+          </label>
+          <input type="color" id="bg-color" value="#40005a" aria-label="Background colour" data-test="bg-color">
+        </div>
+        <p class="hint">Turn the Scene layer off to show just the background colour - or load Solid Background for one that pulses on the beat.</p>
+      </div>
+      <div class="card">
+        <h2>Name</h2>
+        <div class="row">
+          <label class="field-label" for="brand-name">Display name</label>
+          <input id="brand-name" type="text" maxlength="48" placeholder="DJ NAME" data-test="brand-name">
+        </div>
+        <div class="row">
+          <label class="field-label" for="brand-mode">Show</label>
+          <select id="brand-mode">
+            <option value="name">Name</option>
+            <option value="logo">Logo</option>
+            <option value="logo_and_name">Logo and name</option>
+          </select>
+        </div>
+        <div id="brand-sliders" class="sliders"></div>
+      </div>
+      <div class="card">
+        <h2>Output safety</h2>
+        <div id="output-sliders" class="sliders"></div>
+        <div class="row">
+          <label class="switch" title="Limits flashing to protect photosensitive viewers">
+            <input type="checkbox" id="flash-limit" data-test="flash-limit"><span class="track"></span>
+            <span>Flash limiter</span>
+          </label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Library
+          <button id="rescan" class="btn btn-quiet btn-small" title="Re-read every module (takes a few seconds - not mid-show)">Rescan</button>
+        </h2>
+        <div id="library" class="library"></div>
+      </div>
+      <div class="card">
+        <h2>Show</h2>
+        <div class="row">
+          <button id="show-save" class="btn">Save show…</button>
+          <button id="show-open" class="btn">Open show…</button>
+        </div>
+        <p class="hint">A show file stores every layer, control, colour, name and safety setting.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <dialog id="strobe-dialog">
+    <form method="dialog">
+      <h3>Turn off the flash limiter?</h3>
+      <p>The limiter keeps flashing below 3 per second, the level that can trigger seizures in people with photosensitive epilepsy.</p>
+      <p>Only turn it off when the venue allows strobe lighting and has posted warnings.</p>
+      <label class="check"><input type="checkbox" id="strobe-confirm"> The venue allows strobing and warns the audience</label>
+      <div class="row end">
+        <button value="cancel" class="btn">Keep it on</button>
+        <button value="ok" id="strobe-ok" class="btn btn-danger" disabled>Turn it off</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
