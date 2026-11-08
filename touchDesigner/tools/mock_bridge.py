@@ -136,6 +136,11 @@ class FakeRuntime(object):
         self.out = {'blackout': False, 'maxBrightness': 1.0, 'flashLimit': True, 'maxFlashes': 3}
         self.eng = {'mode': 'live', 'bpm': 120.0}
         self.projector_state = 'closed'
+        # looks (build_look_runtime.py): a bank, transition defaults, the TAKE in progress
+        self.bank = [None] * bp.BANK_SIZE
+        self.transition_cfg = {'fade': 2.0, 'quantize': 'bar'}
+        self.take_st = {'phase': 'idle', 'index': None, 'current': None, 'problems': [], 'progress': 0.0}
+        self.job = None
 
     # ------------------------------------------------------------ library
     @staticmethod
@@ -229,7 +234,9 @@ class FakeRuntime(object):
                 'performer': dict(self.perf),
                 'palette': {'index': self.palette_index, 'name': name},
                 'background': list(self.bg) if self.bg else None,
-                'brand': dict(self.brand_rows), 'output': dict(self.out), 'engine': dict(self.eng)}
+                'brand': dict(self.brand_rows), 'output': dict(self.out), 'engine': dict(self.eng),
+                'looks': json.loads(json.dumps(self.bank)), 'transition': dict(self.transition_cfg),
+                'take': {k: self.take_st[k] for k in ('phase', 'index', 'current', 'problems')}}
 
     def background_rgb(self):
         return self.bg or self.palettes[self.palette_index][1]
@@ -290,6 +297,96 @@ class FakeRuntime(object):
 
     def projector(self, action):
         self.projector_state = 'closed' if action == 'close' else action
+
+    # ---------------------------------------------------------------- looks
+    def _capture(self):
+        return {'slots': {slot: json.loads(json.dumps(self.slots[slot])) for slot in bp.LOOK_SLOTS},
+                'palette': self.palettes[self.palette_index][0],
+                'background': list(self.bg) if self.bg else None}
+
+    def save_look(self, index, name):
+        self.bank[index] = {'name': name, 'look': self._capture()}
+
+    def delete_look(self, index):
+        self.bank[index] = None
+        if self.take_st['current'] == index:
+            self.take_st['current'] = None
+
+    def rename_look(self, index, name):
+        if self.bank[index] is None:
+            raise bp.BridgeError('bad_field', 'look %d is empty' % (index + 1))
+        self.bank[index]['name'] = name
+
+    def set_bank(self, entries):
+        self.bank = [entries[i] if i < len(entries) else None for i in range(bp.BANK_SIZE)]
+        if self.take_st['current'] is not None and self.bank[self.take_st['current']] is None:
+            self.take_st['current'] = None
+
+    def transition(self, fade, quantize):
+        if fade is not None:
+            self.transition_cfg['fade'] = round(float(fade), 3)
+        if quantize is not None:
+            self.transition_cfg['quantize'] = quantize
+
+    def take(self, index, fade, quantize):
+        entry = self.bank[index]
+        if entry is None:
+            raise bp.BridgeError('empty_look', 'look %d is empty - save one there first' % (index + 1))
+        if self.take_st['phase'] == 'loading':
+            raise bp.BridgeError('busy', 'a look is still loading - try again in a moment')
+        if self.take_st['phase'] == 'fading':
+            self._complete()
+        for slot in bp.LOOK_SLOTS:
+            mid = (entry['look']['slots'].get(slot) or {}).get('module')
+            if mid and (self.modules.get(mid) or {}).get('approved') != 'yes':
+                raise bp.BridgeError('not_approved', '%s in look %d is not approved for its current version' % (mid, index + 1))
+        now = time.time()
+        self.job = {'look': entry['look'], 'index': index, 'start': now, 'armed': None,
+                    'fade': self.transition_cfg['fade'] if fade is None else float(fade),
+                    'quantize': self.transition_cfg['quantize'] if quantize is None else quantize}
+        self.take_st.update(phase='loading', index=index, problems=[], progress=0.0)
+
+    def _complete(self):
+        look = self.job['look']
+        for slot in bp.LOOK_SLOTS:
+            s = look['slots'].get(slot) or {}
+            self.slots[slot] = {'module': s.get('module'), 'enabled': bool(s.get('enabled', True)),
+                                'intensity': float(s.get('intensity', 1.0)), 'controls': dict(s.get('controls') or {})}
+        names = [x[0] for x in self.palettes]
+        if look.get('palette') in names:
+            self.palette_index = names.index(look['palette'])
+        elif look.get('palette'):
+            self.take_st['problems'].append('palette %r is not installed - kept the current one' % look['palette'])
+        self.bg = list(look['background']) if look.get('background') else None
+        self.take_st.update(phase='idle', current=self.job['index'], progress=1.0)
+        self.job = None
+
+    def tick_take(self, now):
+        """Advance a TAKE; True when its phase changed (the state is rebroadcast)."""
+        j = self.job
+        if j is None:
+            return False
+        ph = self.take_st['phase']
+        if ph == 'loading' and now - j['start'] > 0.15:
+            j['armed'] = now
+            self.take_st['phase'] = 'armed'
+            return True
+        if ph == 'armed':
+            per = {'now': 0, 'beat': 60.0, 'bar': 240.0}[j['quantize']] / self.eng['bpm']
+            boundary = per == 0 or int(now / per) != int(j['armed'] / per)
+            if boundary or now - j['armed'] > 4.0:
+                if j['fade'] <= 0:
+                    self._complete()
+                else:
+                    j['start'] = now
+                    self.take_st['phase'] = 'fading'
+                return True
+        if ph == 'fading':
+            self.take_st['progress'] = min(1.0, (now - j['start']) / j['fade'])
+            if self.take_st['progress'] >= 1.0:
+                self._complete()
+                return True
+        return False
 
     # ---------------------------------------------------- library management
     def _module(self, mid):
@@ -372,8 +469,9 @@ class FakeRuntime(object):
         for slot, s in self.slots.items():
             slots[slot] = {'status': ('ok: 1280x720' if s['enabled'] else 'bypassed') if s['module'] else 'empty',
                            'cookMs': 0.3 if s['module'] else 0.0}
+        take = dict(self.take_st, active='a', progress=round(self.take_st['progress'], 3))
         return {'fps': round(fps, 1), 'slots': slots, 'lanes': dict((k, round(v, 4)) for k, v in lanes.items()),
-                'limiter': {'held': 0.0, 'transitions': 1.0, 'gain': 1.0}}
+                'limiter': {'held': 0.0, 'transitions': 1.0, 'gain': 1.0}, 'take': take}
 
     def preview(self, width):
         height = int(round(width * 9 / 16.0))
@@ -428,6 +526,8 @@ class Server(socketserver.ThreadingTCPServer):
             fps = 1.0 / max(1e-6, now - last)
             last = now
             with self.lock:
+                if self.rt.tick_take(now):
+                    self.send(self.proto.notify({'type': 'state', 'state': self.rt.state()}))
                 v = self.rt.validating
                 if v is not None and now >= v['until']:
                     mid, rep = self.rt.finish_validation()

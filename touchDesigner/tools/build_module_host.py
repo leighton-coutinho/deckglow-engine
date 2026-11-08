@@ -10,6 +10,12 @@ Run inside TouchDesigner's textport (Alt+T), after build_brand_source.py:
     BRAND -> brand_host in3_brand     LOGO -> brand_host in4_logo
     PALETTE -> module_host and hit_host in2_palette (the runtime's palette)
 
+With the look runtime (build_look_runtime.py) there is a second picture
+stack, module_host_b -> hit_host_b, for the next look; the two are mixed
+into LOOK_OUT, which feeds brand_host, and each stack reads its own palette
+(PALETTE_A / PALETTE_B). This builder always builds both stacks and, when
+/project1/looks exists, calls its Wire() to reconnect the mixer.
+
 module_host is the Block 2 wrapper; hit_host (Block 4), brand_host (Block 5)
 and finish_host (Block 6) are the same wrapper in later slots, each taking the
 previous host's output as its image. output is not a module slot: it is the
@@ -343,12 +349,19 @@ def build_host(name, x, y, default_type, image_src=None, extra=None):
 # that takes one - host input 2 (in2_palette) on base and hit hosts.
 # PALETTE comes from build_palette_source.py.
 palette = ROOT.op('PALETTE')
-pal_extra = {2: palette} if palette is not None else {}
 if palette is None:
     print('WARNING no /project1/PALETTE - run build_palette_source.py, then rebuild')
+# each stack reads its own palette once the look runtime exists
+pal_a = ROOT.op('PALETTE_A') or palette
+pal_b = ROOT.op('PALETTE_B') or palette
+pal_a_extra = {2: pal_a} if pal_a is not None else {}
+pal_b_extra = {2: pal_b} if pal_b is not None else {}
 
-base_host = build_host('module_host', 6400, 0, 'base_scene', extra=pal_extra)
-hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host, extra=pal_extra)
+base_host = build_host('module_host', 6400, 0, 'base_scene', extra=pal_a_extra)
+hit_host = build_host('hit_host', 8000, 0, 'hit_fx', image_src=base_host, extra=pal_a_extra)
+# stack B: the next look loads here while stack A stays on screen
+base_host_b = build_host('module_host_b', 6400, -800, 'base_scene', extra=pal_b_extra)
+hit_host_b = build_host('hit_host_b', 8000, -800, 'hit_fx', image_src=base_host_b, extra=pal_b_extra)
 
 # brand_overlay takes prepared brand data (spec s8.2, s10.3). Host inputs 3
 # and 4 are in3_brand and in4_logo; they reach the module as its connectors 2
@@ -362,7 +375,7 @@ if ROOT.op('LOGO') is not None:
 if 3 not in brand_extra:
     print('WARNING no /project1/BRAND - run build_brand_source.py, then rebuild')
 brand_host = build_host('brand_host', 9600, 0, 'brand_overlay',
-                        image_src=hit_host, extra=brand_extra)
+                        image_src=ROOT.op('LOOK_OUT') or hit_host, extra=brand_extra)
 finish_host = build_host('finish_host', 11200, 0, 'finish_fx', image_src=brand_host)
 
 # ------------------------------------------------------------------ /output
@@ -608,4 +621,8 @@ def build_output(src_host):
 
 
 build_output(finish_host)
+if ROOT.op('looks') is not None:
+    print('look runtime rewired:', ', '.join(ROOT.op('looks').op('look_logic').module.Wire()))
+else:
+    print('no look runtime yet: brand_host reads hit_host (run build_look_runtime.py for looks)')
 print('pulse Load on each host to (re)load its module')

@@ -144,6 +144,13 @@ def Frame():
     if _g.get('validating') is not None:
         _watch_validation(p)
 
+    looks = _looks()
+    if looks is not None:
+        v = int(looks.par.Version.eval())
+        if v != _g.get('look_version'):
+            _g['look_version'] = v
+            _send(p.notify({'type': 'state', 'state': p.rt.state()}))
+
     viewers = p.subscribers('preview')
     if viewers:
         prev = parent().op('preview')
@@ -211,8 +218,11 @@ def _trim_report(rep):
 
 def Status():
     out = {'fps': round(_g['fps'], 1), 'slots': {}, 'limiter': {}, 'lanes': {}}
-    for slot, name in SLOT_HOST.items():
-        h = op('/project1/' + name)
+    looks = _looks()
+    if looks is not None:
+        out['take'] = looks.op('look_logic').module.State()
+    for slot in SLOT_HOST:
+        h = op('/project1/' + _host_name(slot))
         if h is not None:
             out['slots'][slot] = {'status': h.par.Status.eval(),
                                   'cookMs': round(float(h.childrenCPUCookTime), 3)}
@@ -232,11 +242,50 @@ def _err(code, message):
     return P.BridgeError(code, message)
 
 
+def _looks():
+    return op('/project1/looks')
+
+
+def _look_logic():
+    l = _looks()
+    if l is None:
+        raise _err('failed', 'no look runtime - run build_look_runtime.py')
+    return l.op('look_logic').module
+
+
+def _host_name(slot):
+    """The host on screen for a slot. Scene and Hits live in two stacks once
+    the look runtime exists; every live edit goes to the one being shown."""
+    l = _looks()
+    if l is not None and slot in ('base_scene', 'hit_fx'):
+        return l.op('look_logic').module.ActiveHost(slot)
+    return SLOT_HOST[slot]
+
+
 def _host(slot):
-    h = op('/project1/' + SLOT_HOST[slot])
+    name = _host_name(slot)
+    h = op('/project1/' + name)
     if h is None:
-        raise _err('failed', 'no %%s - run build_module_host.py' %% SLOT_HOST[slot])
+        raise _err('failed', 'no %%s - run build_module_host.py' %% name)
     return h
+
+
+def _controls_of(slot):
+    """Values the frontend set for the module in a slot's host (kept by the
+    look runtime per host, so a TAKE and a saved look carry them)."""
+    l = _looks()
+    if l is not None:
+        return l.op('look_logic').module.Controls(_host_name(slot))
+    return _desired().setdefault(slot, {})
+
+
+def _look_call(fn, *args, **kw):
+    try:
+        return fn(*args, **kw)
+    except Exception as e:
+        if hasattr(e, 'code') and hasattr(e, 'message'):      # look_logic.LookError
+            raise _err(e.code, e.message)
+        raise
 
 
 def _lib():
@@ -272,7 +321,7 @@ class Adapter(object):
     def state(self):
         slots = {}
         for slot in SLOT_HOST:
-            h = op('/project1/' + SLOT_HOST[slot])
+            h = op('/project1/' + _host_name(slot))
             if h is None:
                 continue
             loaded = h.op('module') is not None
@@ -280,7 +329,7 @@ class Adapter(object):
             slots[slot] = {'module': man.get('id') if man else None,
                            'enabled': bool(h.par.Moduleactive.eval()),
                            'intensity': round(float(h.par.Intensity.eval()), 4),
-                           'controls': dict(_desired().get(slot, {}))}
+                           'controls': dict(_controls_of(slot))}
         pc = op('/project1/performer_controls')
         perf = {}
         if pc is not None:
@@ -312,8 +361,17 @@ class Adapter(object):
         tb = op('/project1/engine_in/test_bpm')
         engine = {'mode': 'demo' if mode is not None and int(mode.par.index.eval()) == 1 else 'live',
                   'bpm': round(float(tb.par.const0value.eval()), 2) if tb is not None else 120.0}
-        return {'schema': P.SHOW, 'slots': slots, 'performer': perf, 'palette': palette,
-                'background': background, 'brand': brand, 'output': output, 'engine': engine}
+        out = {'schema': P.SHOW, 'slots': slots, 'performer': perf, 'palette': palette,
+               'background': background, 'brand': brand, 'output': output, 'engine': engine}
+        l = _looks()
+        if l is not None:
+            ll = l.op('look_logic').module
+            out['looks'] = [None if e is None else {'name': e['name'], 'look': e['look']} for e in ll.Bank()]
+            out['transition'] = ll.Transition()
+            t = ll.State()
+            out['take'] = {'phase': t['phase'], 'index': t['index'], 'current': t['current'],
+                           'problems': t['problems']}
+        return out
 
     def library(self, rescan=False):
         lib = _lib()
@@ -349,7 +407,7 @@ class Adapter(object):
 
     def controls(self, slot):
         decls = dict(SLOT_PARAMS.get(slot, {}))
-        h = op('/project1/' + SLOT_HOST[slot])
+        h = op('/project1/' + _host_name(slot))
         if h is not None and h.op('module') is not None:
             man = _manifest_at(h.par.Modulepath.eval()) or {}
             for c in man.get('controls', []):
@@ -366,7 +424,7 @@ class Adapter(object):
 
     def slot_module(self, slot, mid):
         h = _host(slot)
-        _desired()[slot] = {}
+        _controls_of(slot).clear()
         if mid is None:
             h.par.Unload.pulse()
             return
@@ -379,7 +437,7 @@ class Adapter(object):
             raise _err('wrong_slot', '%%s is a %%s, not a %%s' %% (mid, st.get('type'), slot))
         if not lib.IsApproved(mid):
             raise _err('not_approved', '%%s is not approved for its current version' %% mid)
-        if not lib.LoadApproved(SLOT_HOST[slot], mid):
+        if not lib.LoadApproved(_host_name(slot), mid):
             raise _err('failed', 'LoadApproved refused %%s' %% mid)
 
     def set_control(self, slot, name, value):
@@ -397,7 +455,7 @@ class Adapter(object):
             if p is None:
                 raise _err('unknown_control', 'the module in %%s has no parameter %%s' %% (slot, name))
             p.val = value
-        _desired()[slot][name] = value
+        _controls_of(slot)[name] = value
 
     def performer(self, name, v):
         pc = op('/project1/performer_controls')
@@ -466,6 +524,25 @@ class Adapter(object):
         if w is None:
             raise _err('failed', 'no projector - run build_projector_window.py')
         {'open': w.par.winopen, 'perform': w.par.performance, 'close': w.par.winclose}[action].pulse()
+
+    # ----------------------------------------------------------- looks
+    def save_look(self, index, name):
+        _look_call(_look_logic().SaveLook, index, name)
+
+    def delete_look(self, index):
+        _look_call(_look_logic().DeleteLook, index)
+
+    def rename_look(self, index, name):
+        _look_call(_look_logic().RenameLook, index, name)
+
+    def set_bank(self, entries):
+        _look_call(_look_logic().SetBank, entries)
+
+    def take(self, index, fade, quantize):
+        _look_call(_look_logic().Take, index, fade, quantize)
+
+    def transition(self, fade, quantize):
+        _look_call(_look_logic().SetTransition, fade, quantize)
 
     # ------------------------------------------------- library management
     def _folder(self, mid):

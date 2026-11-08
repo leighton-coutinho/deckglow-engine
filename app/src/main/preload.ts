@@ -19,6 +19,8 @@ const api: DeckglowApi = {
   installPack: (p, force) => ipcRenderer.invoke('deckglow:installPack', p, force),
   removePack: (id) => ipcRenderer.invoke('deckglow:removePack', id),
   listPacks: () => ipcRenderer.invoke('deckglow:listPacks'),
+  getSettings: () => ipcRenderer.invoke('deckglow:getSettings'),
+  setSettings: (s) => ipcRenderer.invoke('deckglow:setSettings', s),
 };
 
 contextBridge.exposeInMainWorld('deckglow', api);

@@ -4,6 +4,21 @@ The control surface a DJ uses: a live preview of the projector output, a
 switch per layer (Scene, Hits, Name, Finish), the background colour, palette,
 name, performance faders, output safety, the module library and show files.
 
+**Looks** - 16 pads under the preview. A look is the Scene and Hits layers
+(with their controls), the palette and the background colour; the name,
+finish, output safety and performance faders stay as they are. Click a pad to
+fade to it (Now, on the next Beat or the next Bar; fade 0-10 s), shift-click
+to cut, click an empty pad to save what is on screen. Keys 1-0 take looks
+1-10, `[` and `]` step through them, `B` is Blackout.
+
+**Controller** - MIDI in the app (Web MIDI; system-exclusive messages are
+never requested). Learn: click Learn next to an action, then touch a pad, key
+or knob. Pads/keys/CC buttons take looks, step next/previous, toggle
+Blackout or a layer; knobs and faders (CCs) drive the six performance faders
+and the fade time. The mapping is saved in the app's settings file (in the
+user-data folder; `DECKGLOW_SETTINGS` for tests). The app must be open for a
+controller to work.
+
 The library installs and removes creator packs (`.dgpack`, from the Install
 button or dropped on the window), and validates, reviews and approves each
 module version. Installing approves nothing: a module reaches the layer menus
@@ -59,8 +74,8 @@ in a browser; `/dev/` endpoints stand in for the Electron preload.
 
 | Command | What it proves |
 | --- | --- |
-| `npm test` | 12 tests. The bridge client against the mock: handshake, broadcasts, `getState` replies, six refusal codes, library, status and preview subscriptions surviving a runtime restart, wrong token reported as such. Packs: `pack_tool.py --json` verify / install / refused reinstall / list / broken archive on a throwaway pack, then refused approval, validate (running and done events), approve, load, revoke through the mock, and proof that `approved.json` and `validation/` were not touched. The protocol's own offline test (`test_bridge_protocol.py`). |
-| `npm run smoke` | The real window against whatever runtime is running (TouchDesigner or the mock): clicks the real switches, sliders, menus, the flash-limiter dialog and Blackout, checks each change comes back in the broadcast state, restores the starting show, then saves a screenshot and log to `out/smoke.png` / `out/smoke.json`. Exit code 0 = pass. Add `--smoke-pack=<file.dgpack>` (with `DECKGLOW_PACKS` set to a test folder) to also inspect, install, rescan and remove that pack through the real IPC, and check an unpicked file is refused. |
+| `npm test` | 21 tests. Looks through the mock: save, a TAKE on the beat passing loading → armed → fading → idle, a cut, refusals, the bank surviving a show round trip. MIDI mapping: parsing, learn, pads, CC buttons firing once per press, faders, one control per action, device filter, next/previous. The look runtime's TAKE state machine (`test_look_logic.py`). And the earlier ones: The bridge client against the mock: handshake, broadcasts, `getState` replies, six refusal codes, library, status and preview subscriptions surviving a runtime restart, wrong token reported as such. Packs: `pack_tool.py --json` verify / install / refused reinstall / list / broken archive on a throwaway pack, then refused approval, validate (running and done events), approve, load, revoke through the mock, and proof that `approved.json` and `validation/` were not touched. The protocol's own offline test (`test_bridge_protocol.py`). |
+| `npm run smoke` | The real window against whatever runtime is running (TouchDesigner or the mock): clicks the real switches, sliders, menus, the flash-limiter dialog and Blackout, checks each change comes back in the broadcast state; with the look runtime, saves two looks on pads 15-16, fades to one and cuts to the other; learns and plays MIDI bindings with synthetic messages (set `DECKGLOW_SETTINGS` to keep it off your real mapping; it restores the mapping either way); restores the starting show and look bank, then saves a screenshot and log to `out/smoke.png` / `out/smoke.json`. Exit code 0 = pass. Add `--smoke-pack=<file.dgpack>` (with `DECKGLOW_PACKS` set to a test folder) to also inspect, install, rescan and remove that pack through the real IPC, and check an unpicked file is refused. |
 
 ## How it is put together
 
@@ -72,6 +87,9 @@ src/renderer/
   bridge.ts           deckglow.control/1 client: auth, request ids, reconnect, subscriptions
   app.ts              the control surface
   library.ts          library and packs: install, remove, validate, review, approve, revoke
+  looks.ts            the 16 look pads, transition settings, TAKE, keyboard
+  midi.ts             Web MIDI input and the Controller card
+  midi-map.ts         the MIDI mapping logic (pure; unit-tested)
   dom.ts              element, toast and dialog helpers
   platform.ts         window.deckglow, or the dev server in a browser
   smoke.ts            the smoke run
@@ -92,4 +110,6 @@ pack ids.
 
 - Launching TouchDesigner, and writing a fresh token before it starts (the
   contract's intended order) - for now, open the project yourself.
-- Installer and setup wizard, crossfades/looks, MIDI.
+- Installer and setup wizard.
+- MIDI output (lighting a controller's pads to show the current look), soft
+  takeover for faders that jump when the controller and the app disagree.

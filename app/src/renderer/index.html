@@ -48,6 +48,25 @@
         <div id="lanes" class="lanes" aria-label="Motion lanes"></div>
       </div>
       <div class="card">
+        <h2>Looks
+          <span id="look-status" class="muted small look-status" aria-live="polite"></span>
+          <span class="h2-actions">
+            <button id="look-prev" class="btn btn-small btn-quiet" title="Previous look ( [ )">‹</button>
+            <button id="look-next" class="btn btn-small btn-quiet" title="Next look ( ] )">›</button>
+          </span>
+        </h2>
+        <div class="row look-transition">
+          <span class="field-label">Fade</span>
+          <input id="look-fade" type="range" min="0" max="10" step="0.1" value="2" aria-label="Fade time" data-test="look-fade">
+          <output id="look-fade-value" class="value muted small">2.0 s</output>
+          <span class="field-label start-on">Start on</span>
+          <div class="segmented" id="look-quantize" role="radiogroup" aria-label="Start the fade on"></div>
+        </div>
+        <div id="look-pads" class="pads"></div>
+        <p id="looks-missing" class="hint" hidden>Looks need the look runtime: run build_look_runtime.py in TouchDesigner, then rebuild the control bridge.</p>
+        <p class="hint">Click a look to fade to it, shift-click to cut. An empty pad saves what is on screen (Scene, Hits, palette, background). Keys 1-0 take looks 1-10.</p>
+      </div>
+      <div class="card">
         <h2>Performance</h2>
         <div id="performer" class="sliders"></div>
       </div>
@@ -98,6 +117,23 @@
             <span>Flash limiter</span>
           </label>
         </div>
+      </div>
+      <div class="card">
+        <h2>Controller <span class="muted small">MIDI</span>
+          <span class="h2-actions">
+            <label class="switch" title="Use MIDI controllers"><input type="checkbox" id="midi-enabled" data-test="midi-enabled"><span class="track"></span></label>
+          </span>
+        </h2>
+        <div class="row">
+          <label class="field-label" for="midi-input">Input</label>
+          <select id="midi-input"></select>
+        </div>
+        <p id="midi-devices" class="hint"></p>
+        <p id="midi-monitor" class="hint midi-monitor">Last: -</p>
+        <details class="controls">
+          <summary>Mapping - click Learn, then touch a pad, key or knob</summary>
+          <div id="midi-map" class="midi-map"></div>
+        </details>
       </div>
       <div class="card">
         <h2>Library

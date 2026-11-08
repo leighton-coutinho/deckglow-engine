@@ -349,6 +349,21 @@ Scene changes should work like this:
 
 This avoids live graph mutation on the active output path.
 
+**As built (2026-11-07, `touchDesigner/tools/build_look_runtime.py`).** Only
+the picture layers are doubled: stack A is `module_host` → `hit_host`, stack
+B is `module_host_b` → `hit_host_b`, mixed into `LOOK_OUT` before the single
+`brand_host` → `finish_host` → `output` chain. A look (the frontend's
+`saveLook` / `take`) is the Scene and Hits layers with their controls, the
+palette and the background colour; the name, finish, output safety and
+performance faders are show-wide and never move on a TAKE (owner's choice).
+`/project1/looks` holds the bank, the transition settings and the TAKE state
+machine (load → warm → wait for the beat or bar, at most 4 s → crossfade →
+swap); each stack reads its own palette table so an outgoing look keeps its
+colours during the fade. The names differ from `/scene_runtime/current_stack`
+and `next_stack` above because the existing hosts kept their names: which
+stack is current is the `Activestack` parameter, not a path. The old stack is
+parked rather than unloaded, so a TAKE back to it reuses its modules.
+
 ## Module Types
 
 The hybrid-first runtime supports four approved module types.

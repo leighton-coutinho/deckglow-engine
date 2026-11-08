@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
-import type { AppConfig, ContractInfo, ControlDecl, PackResult, ShowState } from '../shared/api';
+import type { AppConfig, AppSettings, ContractInfo, ControlDecl, PackResult, ShowState } from '../shared/api';
 
 const SHOW_SCHEMA = 'deckglow.show/1';
 const RENDERER = path.join(__dirname, '..', 'web');   // dist/web: renderer/ and shared/
@@ -141,6 +141,19 @@ function pickedPack(p: unknown): string {
   return p;
 }
 
+// ------------------------------------------------------------ settings
+// The MIDI mapping and other per-computer choices; DECKGLOW_SETTINGS for tests.
+const SETTINGS_FILE = process.env.DECKGLOW_SETTINGS || path.join(app.getPath('userData'), 'settings.json');
+
+function readSettings(): AppSettings {
+  try {
+    const v = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'));
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
 function checkShow(value: unknown): ShowState {
   if (!value || typeof value !== 'object' || (value as any).schema !== SHOW_SCHEMA) {
     throw new Error(`not a ${SHOW_SCHEMA} show file`);
@@ -197,6 +210,12 @@ function registerIpc(win: BrowserWindow): void {
     return packTool(['remove', id]);
   });
   ipcMain.handle('deckglow:listPacks', () => packTool(['list']));
+  ipcMain.handle('deckglow:getSettings', () => readSettings());
+  ipcMain.handle('deckglow:setSettings', (_e, value) => {
+    const text = JSON.stringify(value ?? {}, null, 2);
+    if (!value || typeof value !== 'object' || Array.isArray(value) || text.length > 256 * 1024) throw new Error('settings must be a small object');
+    writeFileSync(SETTINGS_FILE, text + '\n', 'utf8');
+  });
   ipcMain.handle('deckglow:smokeDone', async (_e, result: { ok: boolean; steps: string[] }) => {
     if (!SMOKE) return;
     const image = await win.webContents.capturePage();
@@ -246,8 +265,13 @@ app.whenReady().then(() => {
     if (url.host !== 'deckglow' || !inside(file, RENDERER)) return new Response('not found', { status: 404 });
     return net.fetch(pathToFileURL(file).toString());
   });
-  // No camera, microphone, notifications or other permissions, ever.
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  // MIDI from the app's own page (a DJ controller) and nothing else: no
+  // system-exclusive MIDI, camera, microphone, notifications or the rest.
+  const allowed = (perm: string, origin: string, details?: any) =>
+    perm === 'midi' && origin.startsWith('app://deckglow') && !details?.sysex;
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) =>
+    cb(allowed(perm, (details as any)?.requestingUrl ?? wc.getURL(), details)));
+  session.defaultSession.setPermissionCheckHandler((_wc, perm, origin, details) => allowed(perm, origin, details));
   createWindow();
 });
 

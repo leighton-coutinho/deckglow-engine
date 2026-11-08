@@ -16,6 +16,10 @@ The adapter provides:
     projector(action)                    close_client(client)
     validate(module_id)                  report(module_id) -> dict or None
     approve(module_id, note)             revoke(module_id)
+    save_look(index, name)               delete_look(index)
+    rename_look(index, name)             set_bank(entries)
+    take(index, fade_or_None, quantize_or_None)
+    transition(fade_or_None, quantize_or_None)
 Adapter methods raise BridgeError for refusals; anything else is 'failed'.
 
 Runtime-initiated messages (validation progress, libraryChanged) are built
@@ -74,6 +78,11 @@ def _rgb(value, what='color'):
     return [float(c) for c in value]
 
 
+BANK_SIZE = 16                                # looks in the bank
+LOOK_SLOTS = ('base_scene', 'hit_fx')         # what a look holds (with palette, background)
+QUANTIZE = ('now', 'beat', 'bar')
+MAX_FADE = 30.0                               # seconds
+PARAM_NAME_RE = re.compile(r'^[A-Z][a-z0-9]{0,31}$')   # TouchDesigner custom parameter names
 MODULE_ID_RE = re.compile(r'^[a-z][a-z0-9]*(\.[a-z0-9][a-z0-9_-]*)+$')   # validate_static ID_RE
 
 
@@ -82,6 +91,76 @@ def _module_id(msg):
     if not isinstance(mid, str) or len(mid) > 128 or not MODULE_ID_RE.match(mid):
         raise BridgeError('bad_field', 'module must be a module id such as com.example.pack.scene')
     return mid
+
+
+def _index(msg):
+    i = msg.get('index')
+    if isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < BANK_SIZE:
+        raise BridgeError('bad_field', 'index must be a look number 0..%d' % (BANK_SIZE - 1))
+    return i
+
+
+def _fade_quantize(msg):
+    fade = None if msg.get('fade') is None else _num(msg['fade'], 0, MAX_FADE, 'fade')
+    q = msg.get('quantize')
+    if q is not None and q not in QUANTIZE:
+        raise BridgeError('bad_field', 'quantize must be one of %s' % ', '.join(QUANTIZE))
+    return fade, q
+
+
+def _look(value, where):
+    """A look from a show file: Scene + Hits, palette, background - checked
+    field by field, since it reaches the runtime without a setControl."""
+    if not isinstance(value, dict) or not isinstance(value.get('slots'), dict):
+        raise BridgeError('bad_field', '%s must be {"slots": {...}, "palette", "background"}' % where)
+    slots = {}
+    for slot, sv in value['slots'].items():
+        w = '%s.slots.%s' % (where, slot)
+        if slot not in LOOK_SLOTS:
+            raise BridgeError('bad_field', '%s: a look holds only %s' % (w, ', '.join(LOOK_SLOTS)))
+        if not isinstance(sv, dict):
+            raise BridgeError('bad_field', '%s must be an object' % w)
+        mid = sv.get('module')
+        if mid is not None and (not isinstance(mid, str) or not MODULE_ID_RE.match(mid)):
+            raise BridgeError('bad_field', '%s.module must be a module id or null' % w)
+        controls = sv.get('controls') or {}
+        if not isinstance(controls, dict) or len(controls) > 64:
+            raise BridgeError('bad_field', '%s.controls must be an object' % w)
+        clean = {}
+        for name, cv in controls.items():
+            if not isinstance(name, str) or not PARAM_NAME_RE.match(name):
+                raise BridgeError('bad_field', '%s.controls: %r is not a parameter name' % (w, name))
+            if isinstance(cv, list):
+                cv = _rgb(cv, '%s.controls.%s' % (w, name))
+            elif isinstance(cv, str):
+                cv = _str(cv, '%s.controls.%s' % (w, name), 64)
+            elif not isinstance(cv, (bool, int, float)) or cv != cv:
+                raise BridgeError('bad_field', '%s.controls.%s has an unsupported value' % (w, name))
+            clean[name] = cv
+        slots[slot] = {'module': mid,
+                       'enabled': _bool(sv.get('enabled', True), w + '.enabled'),
+                       'intensity': _num(sv.get('intensity', 1.0), 0, 1, w + '.intensity'),
+                       'controls': clean}
+    pal = value.get('palette')
+    if pal is not None:
+        pal = _str(pal, where + '.palette', 128)
+    bg = value.get('background')
+    return {'slots': slots, 'palette': pal, 'background': None if bg is None else _rgb(bg, where + '.background')}
+
+
+def _bank(value):
+    if not isinstance(value, list) or len(value) > BANK_SIZE:
+        raise BridgeError('bad_field', 'looks must be a list of at most %d entries' % BANK_SIZE)
+    out = []
+    for i, e in enumerate(value):
+        if e is None:
+            out.append(None)
+            continue
+        if not isinstance(e, dict):
+            raise BridgeError('bad_field', 'looks[%d] must be {"name", "look"} or null' % i)
+        out.append({'name': _str(e.get('name') or 'Look %d' % (i + 1), 'looks[%d].name' % i, 32),
+                    'look': _look(e.get('look'), 'looks[%d].look' % i)})
+    return out
 
 
 def _slot(msg):
@@ -331,6 +410,36 @@ class Protocol(object):
                 raise BridgeError('bad_field', 'preview must be {"fps", "width"} or false')
         return None, False
 
+    # --------------------------------------------------------------- looks
+    # A look is Scene + Hits (module, on/off, intensity, controls), palette and
+    # background. take loads it into the idle stack and crossfades it in.
+    def _on_saveLook(self, client, msg):
+        i = _index(msg)
+        self.rt.save_look(i, _str(msg.get('name') or 'Look %d' % (i + 1), 'name', 32))
+        return None, True
+
+    def _on_deleteLook(self, client, msg):
+        self.rt.delete_look(_index(msg))
+        return None, True
+
+    def _on_renameLook(self, client, msg):
+        i = _index(msg)
+        self.rt.rename_look(i, _str(msg.get('name'), 'name', 32))
+        return None, True
+
+    def _on_take(self, client, msg):
+        i = _index(msg)
+        fade, q = _fade_quantize(msg)
+        self.rt.take(i, fade, q)
+        return None, True
+
+    def _on_setTransition(self, client, msg):
+        fade, q = _fade_quantize(msg)
+        if fade is None and q is None:
+            raise BridgeError('bad_field', 'setTransition needs fade and/or quantize')
+        self.rt.transition(fade, q)
+        return None, True
+
     # ------------------------------------------------ library management
     # Validation runs in TouchDesigner's quarantine (about 10 s a module);
     # the runtime broadcasts {"type": "validation"} as it starts and ends.
@@ -369,7 +478,8 @@ class Protocol(object):
             except Exception as e:
                 problems.append('%s: %s: %s' % (label, type(e).__name__, e))
 
-        known = {'schema', 'slots', 'performer', 'palette', 'background', 'brand', 'output', 'engine'}
+        known = {'schema', 'slots', 'performer', 'palette', 'background', 'brand', 'output', 'engine',
+                 'looks', 'transition', 'take'}       # take: live TAKE status, nothing to apply
         for k in sorted(set(show) - known):
             problems.append('unknown field %r ignored' % k)
 
@@ -385,6 +495,10 @@ class Protocol(object):
             attempt('background', lambda: self._on_setBackground(client, {'color': show['background']}))
         if show.get('brand'):
             attempt('brand', lambda: self._on_setBrand(client, dict(show['brand'])))
+        if 'looks' in show:
+            attempt('looks', lambda: self.rt.set_bank(_bank(show['looks'])))
+        if show.get('transition'):
+            attempt('transition', lambda: self.rt.transition(*_fade_quantize(dict(show['transition']))))
         for name, v in (show.get('performer') or {}).items():
             attempt('performer.%s' % name, lambda name=name, v=v: self._on_setPerformer(
                 client, {'name': name, 'value': v}))

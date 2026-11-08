@@ -198,5 +198,38 @@ dialog.wide { max-width: 640px; width: calc(100% - 48px); }
 .drop-overlay { position: fixed; inset: 0; z-index: 20; background: #0b0c10cc; display: grid; place-items: center; pointer-events: none; }
 .drop-overlay div { border: 2px dashed var(--accent); border-radius: 16px; padding: 48px 64px; font-size: 18px; }
 
+/* -------------------------------------------------------------- looks */
+.look-status { margin-left: 4px; }
+.look-transition { display: grid; grid-template-columns: auto 1fr 44px auto auto; gap: 10px; align-items: center; }
+.look-transition .field-label { width: auto; }
+.look-transition .start-on { margin-left: 8px; }
+.pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 10px; }
+.pad { position: relative; aspect-ratio: 16 / 10; border-radius: 8px; border: 1px solid var(--line); background: var(--pad-bg, var(--panel-2));
+  overflow: hidden; cursor: pointer; padding: 0; text-align: left; color: var(--text); transition: border-color .12s, transform .06s; }
+.pad:active { transform: scale(.97); }
+.pad:hover { border-color: #3a4052; }
+.pad-thumb { position: absolute; inset: 0; }
+.pad-thumb img { width: 100%; height: 100%; object-fit: cover; opacity: .55; display: block; }
+.pad-num { position: absolute; top: 4px; left: 6px; font-size: 11px; font-weight: 700; color: var(--muted); text-shadow: 0 1px 2px #000; }
+.pad-name { position: absolute; left: 6px; right: 6px; bottom: 5px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px #000; }
+.pad-edit { position: absolute; top: 2px; right: 4px; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px; color: var(--muted); opacity: 0; transition: opacity .12s; }
+.pad:hover .pad-edit, .pad:focus-visible .pad-edit { opacity: 1; }
+.pad-edit:hover { background: #000a; color: var(--text); }
+.pad-progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); transition: width .25s linear; }
+.pad-empty { border-style: dashed; background: transparent; }
+.pad-empty .pad-name { color: var(--muted); font-weight: 400; }
+.pad-current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+.pad-loading, .pad-armed { border-color: var(--warn); animation: pad-pulse .6s ease-in-out infinite alternate; }
+.pad-fading { border-color: var(--accent); }
+@keyframes pad-pulse { from { box-shadow: 0 0 0 0 transparent; } to { box-shadow: 0 0 12px color-mix(in srgb, var(--warn) 60%, transparent); } }
+
+/* --------------------------------------------------------------- midi */
+.midi-monitor { font-variant-numeric: tabular-nums; }
+.midi-map { display: grid; gap: 12px; margin-top: 10px; }
+.midi-group h4 { margin: 0 0 6px; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.midi-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto auto; gap: 8px; align-items: center; padding: 3px 0; }
+.midi-learning .midi-binding { color: var(--warn); }
+.midi-learning { background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 6px; }
+
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2e3a; border-radius: 5px; border: 2px solid var(--bg); }

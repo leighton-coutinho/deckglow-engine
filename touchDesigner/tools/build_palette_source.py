@@ -231,4 +231,8 @@ print('  selected : %d (%s)' % (src.par.Paletteindex.eval(), name))
 print('  from packs:', ', '.join(added) if added else 'none new',
       ('(dropped: %s)' % ', '.join(removed)) if removed else '')
 print('  background:', 'override %s' % (bg_color,) if bg_override else "the palette's own")
-print('next: run build_module_host.py so module_host and hit_host get PALETTE')
+if ROOT.op('looks') is not None:
+    # the stacks read PALETTE_A / PALETTE_B, fed from PALETTE by the look runtime
+    print('  look runtime rewired:', ', '.join(ROOT.op('looks').op('look_logic').module.Wire()))
+else:
+    print('next: run build_module_host.py so module_host and hit_host get PALETTE')

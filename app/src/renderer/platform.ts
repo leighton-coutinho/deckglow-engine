@@ -60,6 +60,13 @@ function devApi(): DeckglowApi {
     installPack: async (p, force) => (await post<PackResult>(`/dev/pack/install?path=${encodeURIComponent(p)}${force ? '&force=1' : ''}`))!,
     removePack: async (id) => (await post<PackResult>(`/dev/pack/remove?id=${encodeURIComponent(id)}`))!,
     listPacks: async () => (await json<PackResult>('/dev/pack/list'))!,
+    // in a browser the settings live in this origin's localStorage
+    getSettings: async () => {
+      try { return JSON.parse(localStorage.getItem('deckglow-settings') || '{}'); } catch { return {}; }
+    },
+    setSettings: async (s) => {
+      try { localStorage.setItem('deckglow-settings', JSON.stringify(s)); } catch { /* private window */ }
+    },
   };
 }
 

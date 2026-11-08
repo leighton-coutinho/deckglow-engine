@@ -4,7 +4,7 @@
 // main process screenshots the window and exits 0 (pass) or 1 (fail).
 
 import type { BridgeClient } from './bridge.js';
-import type { DeckglowApi, Library, ShowState } from '../shared/api.js';
+import type { DeckglowApi, Library, MidiSettings, ShowState } from '../shared/api.js';
 
 export interface PackSmoke {
   api: DeckglowApi;
@@ -40,7 +40,14 @@ function setSwitch(sel: string, on: boolean): void {
   if (box.checked !== on) box.click();
 }
 
-export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: () => Library, packs?: PackSmoke): Promise<{ ok: boolean; steps: string[] }> {
+export interface MidiSmoke {
+  mapper: { settings: MidiSettings; learn(id: string | null): void };
+  handle(data: ArrayLike<number>, device: string | null): void;
+  persist(): void;
+}
+
+export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: () => Library, packs?: PackSmoke,
+  midi?: MidiSmoke): Promise<{ ok: boolean; steps: string[] }> {
   const steps: string[] = [];
   let ok = true;
   const st = () => bridge.state as ShowState;
@@ -115,6 +122,69 @@ export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: 
     setSwitch('[data-test="slot-hit_fx-enabled"]', true);
     await waitFor('slots on', () => st().slots.base_scene.enabled && st().slots.hit_fx.enabled);
   });
+  if (Array.isArray(st().looks)) {
+    // pads 15 and 16 (indices 14, 15); the starting show restores the bank afterwards
+    const take = (index: number, fade: number) => bridge.request({ type: 'take', index, fade, quantize: 'now' });
+    const settled = (index: number) => () => st().take?.phase === 'idle' && st().take?.current === index;
+    await step('looks: an empty pad saves what is on screen', async () => {
+      if (st().looks![14]) await bridge.request({ type: 'deleteLook', index: 14 });
+      await waitFor('pad 15 empty', () => !st().looks![14]);
+      q<HTMLButtonElement>('[data-test="look-14"]').click();
+      await waitFor('look saved', () => st().looks![14]?.look.slots.hit_fx?.enabled === true);
+    });
+    await step('looks: save a second look (Hits off)', async () => {
+      setSwitch('[data-test="slot-hit_fx-enabled"]', false);
+      await waitFor('hits off', () => st().slots.hit_fx.enabled === false);
+      await bridge.request({ type: 'saveLook', index: 15, name: 'Smoke B' });
+      await waitFor('saved', () => st().looks![15]?.name === 'Smoke B');
+    });
+    await step('looks: TAKE look 15 with a fade (loading, fading, done)', async () => {
+      const seen = new Set<string>();
+      const watch = setInterval(() => seen.add(st().take?.phase ?? ''), 20);
+      await take(14, 0.6);
+      await waitFor('look 15 on screen', settled(14), 10000);
+      clearInterval(watch);
+      if (!seen.has('fading')) throw new Error(`no fading phase seen (${[...seen].join(', ')})`);
+      if (st().slots.hit_fx.enabled !== true) throw new Error('Hits should be back on');
+    });
+    await step('looks: cut to look 16', async () => {
+      await take(15, 0);
+      await waitFor('look 16 on screen', settled(15), 10000);
+      if (st().slots.hit_fx.enabled !== false) throw new Error('Hits should be off in look 16');
+      if (!q('[data-test="look-15"]').classList.contains('pad-current')) throw new Error('pad 16 not marked current');
+    });
+    await step('looks: an empty look is refused', async () => {
+      const r = await bridge.request({ type: 'take', index: 13 }).then(() => 'taken', (e) => e.code);
+      if (st().looks![13] === null && r !== 'empty_look') throw new Error(`expected empty_look, got ${r}`);
+    });
+  }
+  if (midi) {
+    const before = JSON.stringify(midi.mapper.settings);
+    const m = midi.mapper;
+    m.settings.enabled = true;
+    m.settings.input = null;
+    await step('midi: learn a pad for Blackout, press it twice', async () => {
+      m.learn('blackout');
+      midi.handle([0x99, 60, 100], 'Smoke Pad');
+      if (m.settings.bindings.blackout?.number !== 60) throw new Error('not learned');
+      midi.handle([0x99, 60, 100], 'Smoke Pad');
+      await waitFor('blackout on', () => st().output.blackout === true);
+      midi.handle([0x89, 60, 0], 'Smoke Pad');
+      midi.handle([0x99, 60, 100], 'Smoke Pad');
+      await waitFor('blackout off', () => st().output.blackout === false);
+    });
+    await step('midi: learn a knob for Master, turn it', async () => {
+      m.learn('performer:masterIntensity');
+      midi.handle([0xb0, 21, 127], 'Smoke Pad');
+      midi.handle([0xb0, 21, 32], 'Smoke Pad');
+      await waitFor('master follows the knob', () => Math.abs(st().performer.masterIntensity - 32 / 127) < 0.01);
+    });
+    await step('midi: mapping restored', async () => {
+      Object.assign(m.settings, JSON.parse(before));
+      m.settings.bindings = JSON.parse(before).bindings;
+      midi.persist();
+    });
+  }
   await step('restore the starting show', async () => {
     const r: any = await bridge.request({ type: 'applyShow', show: start });
     if (r.problems?.length) throw new Error(r.problems.join('; '));

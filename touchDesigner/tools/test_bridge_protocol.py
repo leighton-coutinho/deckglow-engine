@@ -204,4 +204,60 @@ for m in ({'type': 'validateModule', 'module': 'Com.Bad'}, {'type': 'validateMod
 assert len(rt.calls) == n0
 assert P.notify({'type': 'x'}) == [('127.0.0.1:5000', {'type': 'x'}), ('127.0.0.1:7000', {'type': 'x'})]
 print('ok  validate/report/approve/revoke: acks, libraryChanged to every client, 6 bad ids refused')
+
+# looks and TAKE
+rt.calls.clear()
+for m, call in (
+        ({'type': 'saveLook', 'index': 0}, ('save_look', 0, 'Look 1')),
+        ({'type': 'saveLook', 'index': 15, 'name': 'Drop'}, ('save_look', 15, 'Drop')),
+        ({'type': 'renameLook', 'index': 15, 'name': 'Big drop'}, ('rename_look', 15, 'Big drop')),
+        ({'type': 'deleteLook', 'index': 15}, ('delete_look', 15)),
+        ({'type': 'take', 'index': 0}, ('take', 0, None, None)),
+        ({'type': 'take', 'index': 3, 'fade': 0, 'quantize': 'now'}, ('take', 3, 0.0, 'now')),
+        ({'type': 'setTransition', 'fade': 4, 'quantize': 'bar'}, ('transition', 4.0, 'bar')),
+        ({'type': 'setTransition', 'quantize': 'beat'}, ('transition', None, 'beat'))):
+    out = send('127.0.0.1:5000', m)
+    assert out[0][1]['type'] == 'ack', (m, out[0])
+    assert rt.calls[-1] == call, (m, rt.calls[-1])
+    assert any(c == '127.0.0.1:7000' and x['type'] == 'state' for c, x in out), 'state broadcast'
+n0 = len(rt.calls)
+for m in ({'type': 'saveLook', 'index': 16}, {'type': 'saveLook', 'index': -1}, {'type': 'saveLook', 'index': True},
+          {'type': 'saveLook', 'index': 1.5}, {'type': 'saveLook', 'index': 0, 'name': 'x' * 33},
+          {'type': 'renameLook', 'index': 0}, {'type': 'take'}, {'type': 'take', 'index': 0, 'fade': 31},
+          {'type': 'take', 'index': 0, 'quantize': 'phrase'}, {'type': 'setTransition'},
+          {'type': 'setTransition', 'fade': -1}):
+    r = first(send('127.0.0.1:5000', m))
+    assert r['code'] == 'bad_field', (m, r)
+assert len(rt.calls) == n0
+print('ok  looks: save/rename/delete/take/setTransition applied and broadcast; 11 bad requests refused')
+
+good_look = {'slots': {'base_scene': {'module': 'com.deckglow.solid_background', 'enabled': True, 'intensity': 0.8,
+                                      'controls': {'Breathe': 0.3}},
+                       'hit_fx': {'module': None, 'enabled': False}},
+             'palette': 'ember', 'background': [0.1, 0, 0.2]}
+rt.calls.clear()
+r = first(send('127.0.0.1:5000', {'type': 'applyShow', 'show': {
+    'schema': bp.SHOW, 'looks': [None, {'name': 'Wash', 'look': good_look}], 'transition': {'fade': 1, 'quantize': 'beat'},
+    'take': {'phase': 'idle'}}}))
+assert r['type'] == 'ack' and not r['problems'], r
+bank = [c for c in rt.calls if c[0] == 'set_bank'][0][1]
+assert bank[0] is None and bank[1]['name'] == 'Wash' and bank[1]['look']['slots']['hit_fx'] == {
+    'module': None, 'enabled': False, 'intensity': 1.0, 'controls': {}}
+assert ('transition', 1.0, 'beat') in rt.calls
+bad_looks = [
+    [{'name': 'x', 'look': {'slots': {'brand_overlay': {}}}}],                        # not a look slot
+    [{'name': 'x', 'look': {'slots': {'base_scene': {'module': '../evil'}}}}],         # bad module id
+    [{'name': 'x', 'look': {'slots': {'base_scene': {'controls': {'par.externaltox': 1}}}}}],
+    [{'name': 'x', 'look': {'slots': {'base_scene': {'controls': {'Breathe': {'x': 1}}}}}}],
+    [{'name': 'x', 'look': {'slots': {'base_scene': {'intensity': 2}}}}],
+    [{'name': 'x', 'look': {'slots': {}, 'background': [2, 0, 0]}}],
+    [None] * 17,
+    'not a list',
+]
+for looks in bad_looks:
+    rt.calls.clear()
+    r = first(send('127.0.0.1:5000', {'type': 'applyShow', 'show': {'schema': bp.SHOW, 'looks': looks}}))
+    assert any(p.startswith('looks') for p in r['problems']), (looks, r)
+    assert not any(c[0] == 'set_bank' for c in rt.calls), 'a bad bank must not reach the runtime'
+print('ok  applyShow restores the look bank and transition; 8 malformed banks reported, none applied')
 print('ALL OK')

@@ -613,6 +613,85 @@ trip through the real IPC. The script is not in the repo: it writes to the
 real `Packs/`, `validation/` and `approved.json` (and puts them back), which
 is not something `npm test` should do.
 
+**Desktop app — step 4 (looks, TAKE crossfades, MIDI): done and verified**
+(2026-11-07). Owner's choices: a
+look is **Scene + Hits + colours** (module, on/off, intensity, controls of
+both picture layers, palette, background) — name, finish, output safety and
+performance faders are show-wide and never move on a TAKE; **MIDI lives in
+the app** (Web MIDI), so the app must be open for a controller to work.
+
+- **Two picture stacks** (`build_look_runtime.py`, HYBRID_RUNTIME_ARCHITECTURE
+  "As built"): stack B `module_host_b` → `hit_host_b` beside stack A,
+  `look_switch` (one stack while idle — the parked one never cooks) /
+  `look_cross` (both while fading) → `LOOK_OUT` → `brand_host`. Per-stack
+  palettes `PALETTE_A`/`PALETTE_B` = Switch DAT of the live `PALETTE` or a
+  frozen copy (`look_frozen_a/b`), so the outgoing look keeps its colours.
+  `build_module_host.py` now always builds both stacks and calls
+  `looks/look_logic.Wire()` when the look runtime exists;
+  `build_palette_source.py` calls `Wire()` too (so a palette rebuild no
+  longer needs a stack rebuild once looks exist).
+- **TAKE** (`look_logic`): refused before anything changes if the look is
+  empty or a module is not approved; freezes the outgoing palette, selects
+  the look's palette/background, loads the idle stack via `LoadApproved`
+  (reuses a module already there with a `Reset` pulse), applies on/off,
+  intensity and controls at frame 3 (hosts' `Finish()` runs at 2),
+  force-cooks the idle stack while it warms (lazy cooking), waits for the
+  beat (`MOTION_OUT sync_phase` wrap) or bar (`ENGINE_INPUT bar_phase` wrap)
+  but **never more than 4 s**, fades over `Transitiontime` (0 = cut), swaps
+  `Activestack`. A TAKE while fading completes the first at once; while armed
+  replaces it; while loading is refused `busy`. `Phase` is a plain
+  parameter set by the logic — as an expression reading storage,
+  `look_switch` would have no cook dependency to follow.
+- **Remembered controls** moved from the bridge's storage (per slot) to
+  `looks` storage per host, so a look captures them and a TAKE re-applies
+  them. Live edits go to the on-screen host (`_host_name(slot)` →
+  `ActiveHost`); `brand_overlay`/`finish_fx` stay single.
+- **Bridge/protocol** (minor, still `deckglow.control/1`): `saveLook`,
+  `renameLook`, `deleteLook`, `take`, `setTransition`; error `empty_look`;
+  state gains `looks` (16, null = empty), `transition`, `take`; status gains
+  `take` (with `progress`); the bridge rebroadcasts state when `looks.Version`
+  changes. Show files carry the bank and transition; `applyShow` validates
+  every look field by field (`_look`/`_bank`: slots only base/hit, module id
+  pattern, parameter-name pattern, value types and ranges) — 8 malformed
+  banks are reported and none applied. `take` in a show file is ignored.
+- **App:** Looks card (16 pads with thumbnails and background tint, fade
+  slider, Now/Beat/Bar, ‹ ›, keys 1-0 and `[` `]`, shift-click = cut, empty
+  pad = save, ⋯ = save/rename/clear). Controller card: input menu, last-
+  message monitor, MIDI learn per action, clear. `midi-map.ts` is pure:
+  buttons fire on note-on or a CC crossing 64 (once per press), faders take
+  CCs only (learning a note for one is rejected), one control maps to one
+  action. Main process: settings file in userData (`DECKGLOW_SETTINGS`), and
+  the permission handlers now allow `midi` from `app://deckglow` only, never
+  sysex — everything else is still refused.
+- Not done: MIDI output (pad lights), soft takeover for jumping faders, and
+  per-look brand/finish (not wanted).
+
+Verified outside TD: `npm test` 21/21 (adds `looks.test.mjs` through the
+mock — loading → armed → fading → idle on the beat, cut, refusals, bank
+through a show round trip; `midi.test.mjs` 7; `test_look_logic.py` with
+stand-in hosts/palette/library/clock — 8 groups incl. frozen palettes, warm
+cooks, beat vs bar, 4 s timeout, mid-fade TAKE, missing palette, reuse).
+Electron smoke 22/22 against the mock: pad saves, TAKE with fade, cut, empty
+look refused, MIDI learn + Blackout pad + Master knob via synthetic messages,
+mapping and show restored. UI checked in the browser pane (Web MIDI refused
+there, as expected outside Electron).
+
+**Verified in TouchDesigner** (after rebuilding the stack, the look runtime
+and the bridge): the bridge reports 16 empty pads, transition 2 s on the bar,
+stack A on screen. Electron smoke 22/22 against TD (pad save, TAKE with a
+fade, cut, empty look refused, MIDI learn + pad + knob, show and mapping
+restored). A real crossfade between two distinct looks (purple Solid
+Background, ember palette, Hits off → Kinetic Stripes + orbs, deckglow):
+loading 0.13 s, then the bar wait hit the 4 s cap (live mode, no music, so
+the bar clock stood still — as designed), a 3 s fade with 22 preview frames
+mid-blend, then exactly the saved look; a cut back took 0.77 s. The preview
+frame during loading was still purple although the live palette had already
+switched — the frozen outgoing palette works — and the name stayed steady
+through the fade. Repeated cuts swap the stacks A → B → A, each reporting
+`ok: 1280x720`. The test looks were removed and the show restored. A test
+script of mine left its socket timeout short and its final restore timed out
+on the client side; TouchDesigner had applied it anyway (checked).
+
 ### Which file is current
 
 `touchDesigner/engine_input_block1.toe` is canonical. TouchDesigner writes
@@ -635,7 +714,7 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 
 | Script | Purpose |
 | --- | --- |
-| `build_module_host.py` | Builds the whole stack: `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
+| `build_module_host.py` | Builds the whole stack (and the second picture stack `module_host_b` → `hit_host_b` for looks; calls `looks` `Wire()` when it exists): `module_host` → `hit_host` → `brand_host` (plus `BRAND`/`LOGO`) → `finish_host` → `output` (safety) → `OUTPUT`. Idempotent; carries `Modulepath`/`Moduletype` and the output's `Maxbrightness`/`Blackout`. Pulse `Load` on each host after rebuilding. |
 | `build_tempo_fallback.py` | Adds `tempo_bpm` to `engine_in` and replaces the fixed 120 BPM fallback with `phase_keeper` (last usable tempo, no phase jump). Idempotent; keeps `test_bpm`. |
 | `diagnose_tempo_fallback.py` | Read-only. Prints the keeper's mode and held tempo, then measures `sync_phase` speed over 1 s and reports PASS if it matches. |
 | `build_control_bridge.py` | Builds `/project1/control_bridge`, the `deckglow.control/1` WebSocket server the desktop app talks to. Run after the stack, palette, brand, library and projector builders. |
@@ -643,6 +722,8 @@ exec(open(r'C:\path\to\touchDesigner\tools\build_module_host.py').read())
 | `bridge_client.py` | Standard-library WebSocket client, **outside** TD: `state`, `send '<json>'`, `preview out.jpg`, `demo`. |
 | `mock_bridge.py` | Plain Python, **outside** TD: a stand-in control bridge (real protocol code, in-memory show) for developing the app without TouchDesigner. `--port` to move it; refuses a port already in use. |
 | `test_bridge_protocol.py` | Plain Python, **outside** TD: the protocol's offline test with a fake adapter (also run by the app's `npm test`). |
+| `build_look_runtime.py` | Builds `/project1/looks` (look bank, transition settings, TAKE state machine), the mixer (`look_switch`/`look_cross` → `LOOK_OUT` → `brand_host`) and the per-stack palettes. Run after `build_module_host.py`, then rebuild the control bridge. Keeps the bank, remembered controls and active stack. |
+| `test_look_logic.py` | Plain Python, **outside** TD: the TAKE state machine with stand-in hosts and a clock (also run by `npm test`). |
 | `build_solid_background.py` | Builds and exports `modules/solid_background/` (palette background, pulsing toward primary on the beat). |
 | `pack_tool.py` | Plain Python, **outside** TD: `build` / `verify` / `install` / `remove` / `list` creator packs (`.dgpack`). Installs into `touchDesigner/Packs/`. `--json` for one machine-readable result (what the desktop app reads). |
 | `check_contract.py` | Plain Python, **outside** TD: fails if the spec, validator, runtime builders or manifests drift from `docs/contract/deckglow.scene-module-1.json`. Run after any change to those. |

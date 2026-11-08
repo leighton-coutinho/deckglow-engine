@@ -26,6 +26,40 @@ export interface ShowState {
   brand: { displayName?: string; mode?: string; subtitle?: string; scale?: number; opacity?: number };
   output: { blackout?: boolean; maxBrightness?: number; flashLimit?: boolean; maxFlashes?: number };
   engine: { mode?: 'live' | 'demo'; bpm?: number };
+  /** The look bank: 16 entries, null where empty (present once the look runtime is built). */
+  looks?: (LookEntry | null)[];
+  transition?: Transition;
+  take?: TakeState;
+}
+
+export const BANK_SIZE = 16;
+export type Quantize = 'now' | 'beat' | 'bar';
+export interface Transition { fade: number; quantize: Quantize }
+/** A look: the Scene and Hits layers, palette and background (owner's choice, 2026-11-07). */
+export interface Look {
+  slots: Partial<Record<'base_scene' | 'hit_fx', SlotState>>;
+  palette: string | null;
+  background: [number, number, number] | null;
+}
+export interface LookEntry { name: string; look: Look }
+export interface TakeState {
+  phase: 'idle' | 'loading' | 'armed' | 'fading';
+  index: number | null;
+  current: number | null;
+  problems: string[];
+  progress?: number;
+}
+
+/** Saved by the main process in the app's settings file. */
+export interface AppSettings {
+  midi?: MidiSettings;
+}
+export interface MidiBinding { type: 'note' | 'cc'; channel: number; number: number }
+export interface MidiSettings {
+  enabled: boolean;
+  /** Input device name, or null for every input. */
+  input: string | null;
+  bindings: Record<string, MidiBinding>;
 }
 
 /** A creative control as declared in a module.json. */
@@ -63,6 +97,7 @@ export interface RuntimeStatus {
   slots?: Record<string, { status?: string; cookMs?: number }>;
   limiter?: { held?: number | null; transitions?: number | null; gain?: number | null };
   lanes?: Record<string, number>;
+  take?: TakeState & { active?: 'a' | 'b' };
 }
 
 /** The parts of the frozen module contract the app shows. */
@@ -126,4 +161,7 @@ export interface DeckglowApi {
   installPack(path: string, force: boolean): Promise<PackResult>;
   removePack(id: string): Promise<PackResult>;
   listPacks(): Promise<PackResult>;
+  /** App settings (MIDI mapping), kept in the app's user-data folder. */
+  getSettings(): Promise<AppSettings>;
+  setSettings(settings: AppSettings): Promise<void>;
 }

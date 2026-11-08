@@ -8,6 +8,8 @@
 import { BridgeClient, BridgeRequestError, type Connection } from './bridge.js';
 import { $, el, toast } from './dom.js';
 import { createLibrary } from './library.js';
+import { createLooks } from './looks.js';
+import { createMidi } from './midi.js';
 import { api } from './platform.js';
 import { runSmoke } from './smoke.js';
 import { CONFIRM_STROBE, SLOTS } from '../shared/api.js';
@@ -86,6 +88,8 @@ let contract: ContractInfo | null = null;
 let library: Library = { modules: [], palettes: [] };
 let state: ShowState | null = null;
 let libraryPanel: ReturnType<typeof createLibrary>;
+let looksPanel: ReturnType<typeof createLooks>;
+let midi: ReturnType<typeof createMidi>;
 
 async function send(msg: Record<string, unknown>, quiet = false): Promise<any> {
   try {
@@ -441,6 +445,27 @@ function applyState(s: ShowState): void {
   state = s;
   renderSlots(s);
   for (const u of updaters) u(s);
+  looksPanel?.update(s);
+}
+
+// ---------------------------------------------------------------- MIDI
+// Controller actions reach the runtime exactly as the on-screen controls do.
+const midiPerformer = throttle((name: string, v: number) => fire({ type: 'setPerformer', name, value: Math.round(v * 1000) / 1000 }), 40);
+const midiFade = throttle((v: number) => fire({ type: 'setTransition', fade: Math.round(v * 100) / 10 }), 80);
+function midiPress(id: string): void {
+  const s = state;
+  if (id.startsWith('take:')) looksPanel.take(Number(id.slice(5)));
+  else if (id === 'next') looksPanel.step(1);
+  else if (id === 'prev') looksPanel.step(-1);
+  else if (id === 'blackout') fire({ type: 'setOutput', blackout: !s?.output.blackout });
+  else if (id.startsWith('layer:')) {
+    const slot = id.slice(6) as SlotName;
+    fire({ type: 'setSlotEnabled', slot, enabled: !s?.slots[slot]?.enabled });
+  }
+}
+function midiValue(id: string, v: number): void {
+  if (id.startsWith('performer:')) midiPerformer(id.slice(10), v);
+  else if (id === 'fade') midiFade(v);
 }
 
 async function main(): Promise<void> {
@@ -468,7 +493,7 @@ async function main(): Promise<void> {
       libraryPanel.render();
     },
     onState: applyState,
-    onStatus: applyStatus,
+    onStatus: (st) => { applyStatus(st); looksPanel?.onStatus(st); },
     onPreview: applyPreview,
     onEvent: (m) => libraryPanel.onEvent(m),
   });
@@ -478,10 +503,14 @@ async function main(): Promise<void> {
   });
   libraryPanel.setup();
   void libraryPanel.loadPacks();
+  looksPanel = createLooks({ bridge, state: () => state, library: () => library, thumbnail: (p) => api.thumbnail(p) });
+  looksPanel.setup();
+  midi = createMidi({ api, press: midiPress, value: midiValue });
+  await midi.setup();
   bridge.start();
-  (window as any).__deckglow = { bridge, get previewFrames() { return previewFrames; }, get library() { return library; }, libraryPanel };
+  (window as any).__deckglow = { bridge, get previewFrames() { return previewFrames; }, get library() { return library; }, libraryPanel, looksPanel, midi };
   if (config.smoke) {
-    void runSmoke(bridge, () => previewFrames, () => library, { api, pack: config.smokePack ?? null, panel: libraryPanel })
+    void runSmoke(bridge, () => previewFrames, () => library, { api, pack: config.smokePack ?? null, panel: libraryPanel }, midi)
       .then((r) => api.smokeDone(r));
   }
 }

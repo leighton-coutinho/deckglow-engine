@@ -1,6 +1,6 @@
 # Frontend Message Contract
 
-Status: Draft v1 (2026-11-06; library management added 2026-11-07, a minor change under section 6)  
+Status: Draft v1 (2026-11-06; library management and looks added 2026-11-07, minor changes under section 6)  
 Protocol id: `deckglow.control/1`  
 Show format: `deckglow.show/1`  
 Runtime: `/project1/control_bridge` (`touchDesigner/tools/build_control_bridge.py`)  
@@ -73,6 +73,12 @@ Slots are `base_scene`, `hit_fx`, `brand_overlay`, `finish_fx`.
 | `approveModule` | `module` (id), optional `note` (≤200 chars) | Approves the current version. Refused `not_validated` without a report for this version, `validation_failed` if it failed. Never implied by installing or validating. |
 | `revokeModule` | `module` (id) | Removes the approval. A layer already showing the module keeps it until switched. |
 
+| `saveLook` | `index` 0..15, optional `name` (≤32) | Saves what is on screen as a look: the Scene and Hits layers (module, on/off, intensity, the controls set from the frontend), the palette and the background colour. Name, finish, output safety and performance faders are never part of a look. |
+| `renameLook` | `index`, `name` | |
+| `deleteLook` | `index` | Empties the pad. |
+| `take` | `index`, optional `fade` 0..30 s, optional `quantize` (`now`, `beat`, `bar`) | Loads the look into the idle picture stack (approved modules only), warms it, waits for the next beat or bar (at most 4 s - a TAKE without music still happens), crossfades, swaps. `fade` 0 is a cut. Refused: `empty_look`, `not_approved`, `busy` while the previous TAKE is still loading. A TAKE while one is fading finishes that one at once; while one waits for its beat, it replaces it. Progress is in `state.take` and `status.take`. |
+| `setTransition` | `fade` and/or `quantize` | The defaults a `take` without them uses. |
+
 `getLibrary` with `rescan: true` also re-reads installed packs' palettes
 (`<pack id>/<name>` in the palette list), keeping the selected palette by name.
 
@@ -94,7 +100,7 @@ then sends `getLibrary` with `rescan: true`.
 
 Error codes: `bad_json`, `unauthenticated`, `unknown_type`, `bad_field`,
 `not_approved`, `wrong_slot`, `not_loaded`, `unknown_control`, `confirm_required`,
-`unknown_module`, `busy`, `not_validated`, `validation_failed`, `failed`.
+`unknown_module`, `busy`, `not_validated`, `validation_failed`, `empty_look`, `failed`.
 
 ## 5. Show state — `deckglow.show/1`
 
@@ -117,16 +123,30 @@ writes show files.
   "background": null,
   "brand": {"displayName": "KOUTINHO", "mode": "name", "subtitle": "", "scale": 1.0, "opacity": 1.0},
   "output": {"blackout": false, "maxBrightness": 1.0, "flashLimit": true, "maxFlashes": 3},
-  "engine": {"mode": "live", "bpm": 120}
+  "engine": {"mode": "live", "bpm": 120},
+  "looks": [{"name": "Stripes", "look": {
+               "slots": {"base_scene": {"module": "com.deckglow.kinetic_stripes", "enabled": true, "intensity": 1.0, "controls": {}},
+                         "hit_fx":     {"module": "com.deckglow.orb_burst", "enabled": true, "intensity": 1.0, "controls": {"Spawncount": 6}}},
+               "palette": "deckglow", "background": null}},
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+  "transition": {"fade": 2.0, "quantize": "bar"},
+  "take": {"phase": "idle", "index": 0, "current": 0, "problems": []}
 }
 ```
 
-`applyShow` order: `engine`, `palette`, `background`, `brand`, `performer`,
-then each slot's `module`, `enabled`, `intensity` and `controls` (controls are
-applied after the module has loaded), then `output` last — so a show can never
-leave the safety stage in an older state than the picture. `controls` holds
-only values that differ from the module's defaults; a module change clears
-them.
+`looks`, `transition` and `take` appear once the look runtime is built
+(`build_look_runtime.py`). `take` is live status only - `applyShow` ignores
+it. A show file's looks are checked field by field (module ids, parameter
+names, value types and ranges) before the runtime sees them; a malformed bank
+is reported and not applied.
+
+`applyShow` order: `engine`, `palette`, `background`, `brand`, the look bank
+and `transition`, `performer`, then each slot's `module`, `enabled`,
+`intensity` and `controls` (controls are applied after the module has
+loaded), then `output` last — so a show can never leave the safety stage in
+an older state than the picture. `controls` holds only values that differ
+from the module's defaults; a module change clears them. Live edits always go
+to the picture stack on screen.
 
 ## 6. Versioning
 
