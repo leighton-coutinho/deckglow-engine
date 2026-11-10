@@ -98,6 +98,9 @@ export interface RuntimeStatus {
   limiter?: { held?: number | null; transitions?: number | null; gain?: number | null };
   lanes?: Record<string, number>;
   take?: TakeState & { active?: 'a' | 'b' };
+  /** false while TouchDesigner is still opening the project (absent = ready). */
+  ready?: boolean;
+  startup?: Record<string, unknown> | null;
 }
 
 /** The parts of the frozen module contract the app shows. */
@@ -158,6 +161,8 @@ export interface SetupInfo {
   touchDesigner: { exe: string | null; version: string | null };
   touchDesignerRunning: boolean;
   engine: { exe: string | null; running: boolean; startedByApp: boolean };
+  /** tasklist processes the app has started (diagnostics) */
+  processChecks?: number;
 }
 export type EngineEvent = { type: 'log'; line: string } | { type: 'exit'; code: number | null };
 
@@ -193,4 +198,8 @@ export interface DeckglowApi {
   stopEngine(): Promise<void>;
   engineLog(): Promise<string[]>;
   onEngine(cb: (ev: EngineEvent) => void): void;
+  /** The window was minimized or hidden (false), or restored or shown (true). */
+  onWindowVisible?(cb: (visible: boolean) => void): void;
+  /** Smoke runs only: minimize / restore / maximize / unmaximize the window. */
+  smokeWindow?(action: 'minimize' | 'restore' | 'maximize' | 'unmaximize'): Promise<{ width: number; height: number; minimized: boolean; maximized: boolean }>;
 }

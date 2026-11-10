@@ -5,7 +5,7 @@
 // runtime broadcasts back, so the screen always shows what TouchDesigner is
 // actually doing - also when another window or a show file changed it.
 
-import { BridgeClient, BridgeRequestError, type Connection } from './bridge.js';
+import { BridgeClient, BridgeRequestError, type Connection, type RuntimeReadiness } from './bridge.js';
 import { $, el, toast } from './dom.js';
 import { createLibrary } from './library.js';
 import { createLooks } from './looks.js';
@@ -93,6 +93,7 @@ let looksPanel: ReturnType<typeof createLooks>;
 let midi: ReturnType<typeof createMidi>;
 let setupPanel: ReturnType<typeof createSetup> | undefined;
 let lastStatus: RuntimeStatus | null = null;
+let readiness: RuntimeReadiness = 'ready';
 
 async function send(msg: Record<string, unknown>, quiet = false): Promise<any> {
   try {
@@ -100,7 +101,11 @@ async function send(msg: Record<string, unknown>, quiet = false): Promise<any> {
   } catch (e) {
     if (!quiet) {
       const err = e as BridgeRequestError;
-      toast(err.code === 'offline' ? 'Not connected to TouchDesigner' : err.message);
+      // while TouchDesigner is starting or stalled the banner already says so;
+      // a late reply is not a failure worth a toast per control
+      if (!(err.code === 'timeout' && bridge.readiness !== 'ready')) {
+        toast(err.code === 'offline' ? 'Not connected to TouchDesigner' : err.message);
+      }
     }
     throw e;
   }
@@ -174,6 +179,22 @@ function showConnection(c: Connection): void {
   pill.title = 'reason' in c ? `${c.reason} - retrying in ${(c.retryInMs / 1000).toFixed(1)} s` : '';
   document.body.classList.toggle('offline', c.phase !== 'open');
   if (c.phase !== 'open') $('fps').textContent = '';
+}
+
+const READINESS_TEXT = {
+  starting: 'TouchDesigner is starting… changes apply when it is ready',
+  busy: 'TouchDesigner is busy… changes apply in a moment',
+} as const;
+function showReadiness(r: RuntimeReadiness): void {
+  const banner = $('runtime-busy');
+  banner.hidden = r === 'ready';
+  if (r !== 'ready') banner.textContent = READINESS_TEXT[r];
+  document.body.classList.toggle('runtime-busy', r !== 'ready');
+  if (bridge?.connection.phase === 'open') {
+    const pill = $('connection');
+    pill.textContent = r === 'starting' ? 'Starting…' : r === 'busy' ? 'Busy…' : 'Connected';
+    pill.className = 'pill ' + (r === 'ready' ? 'pill-ok' : 'pill-wait');
+  }
 }
 
 // --------------------------------------------------------------- layers
@@ -432,17 +453,59 @@ function applyStatus(st: RuntimeStatus): void {
   }
 }
 
-let previewUrl: string | null = null;
+// Preview frames: one decodes at a time and the newest waiting frame wins, so
+// frames arriving faster than they decode are dropped instead of queued. Every
+// object URL is revoked once it is replaced or dropped. (Before, each frame got
+// a URL and only the one whose load finished freed its predecessor: frames
+// replaced mid-load, and every frame while the window was minimized, leaked.)
+let previewShown: string | null = null;
+let previewDecoding = false;
+let previewNext: Blob | null = null;
 let previewFrames = 0;
 function applyPreview(frame: Blob | ArrayBuffer): void {
-  const blob = frame instanceof Blob ? frame : new Blob([frame]);
-  const url = URL.createObjectURL(blob);
-  const img = $<HTMLImageElement>('preview');
-  img.onload = () => { if (previewUrl && previewUrl !== url) URL.revokeObjectURL(previewUrl); previewUrl = url; };
-  img.src = url;
+  previewNext = frame instanceof Blob ? frame : new Blob([frame], { type: 'image/jpeg' });
   previewFrames++;
-  $('preview-empty').hidden = true;
+  if (!previewDecoding) decodeNextPreview();
 }
+function decodeNextPreview(): void {
+  const blob = previewNext;
+  previewNext = null;
+  if (!blob) { previewDecoding = false; return; }
+  previewDecoding = true;
+  const url = URL.createObjectURL(blob);
+  const probe = new Image();
+  const done = (ok: boolean) => {
+    if (ok) {
+      $<HTMLImageElement>('preview').src = url;      // decoded already: swapping is instant
+      if (previewShown) URL.revokeObjectURL(previewShown);
+      previewShown = url;
+      $('preview-empty').hidden = true;
+    } else {
+      URL.revokeObjectURL(url);
+    }
+    decodeNextPreview();
+  };
+  probe.onload = () => done(true);
+  probe.onerror = () => done(false);
+  probe.src = url;
+}
+
+// A hidden (minimized) window shows nothing: stop the preview and status
+// streams instead of making TouchDesigner encode frames nobody sees and the
+// page catch up on a backlog when it comes back. The connection - and MIDI,
+// looks and every control - keeps working.
+const LIVE_SUBS = { status: true, preview: { fps: 15, width: 640 } } as const;
+let windowHidden = false;
+let subscribedLive: boolean | null = null;
+function syncSubscriptions(force = false): void {
+  if (!bridge) return;
+  const live = !(document.hidden || windowHidden);
+  if (!force && live === subscribedLive) return;
+  subscribedLive = live;
+  void bridge.subscribe(live ? LIVE_SUBS : { status: false, preview: false }).catch(() => undefined);
+}
+document.addEventListener('visibilitychange', () => syncSubscriptions());
+api.onWindowVisible?.((v) => { windowHidden = !v; syncSubscriptions(); });
 
 // ------------------------------------------------------------------ state
 function applyState(s: ShowState): void {
@@ -490,9 +553,12 @@ async function main(): Promise<void> {
     client: `deckglow-app/${config.version}`,
     onConnection: (c) => {
       showConnection(c);
+      showReadiness(bridge?.readiness ?? 'ready');
       if (c.phase === 'open') {
-        void libraryPanel.load();
-        void bridge.subscribe({ status: true, preview: { fps: 15, width: 640 } }).catch(() => undefined);
+        // while TouchDesigner is still starting, its library may be about to be
+        // rescanned: ask once it says it is ready (onReadiness)
+        if (bridge.readiness !== 'starting') void libraryPanel.load();
+        syncSubscriptions(true);             // live streams only while the window is visible
         void setupPanel?.restorePending();
       }
       libraryPanel.render();
@@ -502,6 +568,12 @@ async function main(): Promise<void> {
     onStatus: (st) => { lastStatus = st; applyStatus(st); looksPanel?.onStatus(st); setupPanel?.onStatus(st); },
     onPreview: applyPreview,
     onEvent: (m) => libraryPanel.onEvent(m),
+    onReadiness: (r) => {
+      const was = readiness;
+      readiness = r;
+      showReadiness(r);
+      if (was === 'starting' && r !== 'starting') void libraryPanel.load();
+    },
   });
   libraryPanel = createLibrary({
     bridge, api, state: () => state, onLibrary,

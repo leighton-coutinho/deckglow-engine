@@ -250,6 +250,16 @@ function registerIpc(win: BrowserWindow): void {
   ipcMain.handle('deckglow:engineLog', () => runtime.engineLogTail());
   runtime.onEngine = (ev) => { if (!win.isDestroyed()) win.webContents.send('deckglow:engine', ev); };
 
+  // smoke runs only: drive the window the way a person does, then measure it
+  ipcMain.handle('deckglow:smokeWindow', (_e, action: string) => {
+    if (!SMOKE) throw new Error('smoke runs only');
+    if (action === 'minimize') win.minimize();
+    else if (action === 'restore') { win.restore(); win.showInactive(); }
+    else if (action === 'maximize') win.maximize();
+    else if (action === 'unmaximize') win.unmaximize();
+    const b = win.getContentBounds();
+    return { width: b.width, height: b.height, minimized: win.isMinimized(), maximized: win.isMaximized() };
+  });
   ipcMain.handle('deckglow:smokeDone', async (_e, result: { ok: boolean; steps: string[] }) => {
     if (!SMOKE) return;
     const image = await win.webContents.capturePage();
@@ -279,6 +289,14 @@ function createWindow(): void {
   });
   win.once('ready-to-show', () => (SMOKE ? win.showInactive() : win.show()));
   registerIpc(win);
+  // Tell the page when nobody can see it, so it stops the preview and status
+  // streams. The page's own document.hidden is not enough: it never changes
+  // when backgroundThrottling is off (the smoke run turns it off).
+  const visible = (v: boolean) => () => { if (!win.isDestroyed()) win.webContents.send('deckglow:windowVisible', v); };
+  win.on('minimize', visible(false));
+  win.on('hide', visible(false));
+  win.on('restore', visible(true));
+  win.on('show', visible(true));
   // The page may never navigate away or open windows; https links go to the browser.
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://deckglow/')) e.preventDefault(); });
   win.webContents.setWindowOpenHandler(({ url }) => {

@@ -300,10 +300,58 @@ export async function runSmoke(bridge: BridgeClient, frames: () => number, lib: 
       await packs.api.startEngine();
       await waitFor('engine output', () => lines.some((l) => /Listening to system audio/.test(l)), 10000);
       if (!(await packs.api.setupInfo()).engine.running) throw new Error('not running');
+      // 2026-11-09: each of ~100 readout lines a second used to reach the page and
+      // spawn two tasklist processes. Now: lines at most twice a second, and only
+      // the timers' process checks (one tasklist, reused for 2 s).
+      const checks0 = (await packs.api.setupInfo()).processChecks ?? 0;
+      const lines0 = lines.length;
+      await sleep(4000);
+      const checks = ((await packs.api.setupInfo()).processChecks ?? 0) - checks0;
+      const got = lines.length - lines0;
+      steps.push(`     (engine running 4 s: ${got} log messages, ${checks} process checks)`);
+      if (got > 12) throw new Error(`${got} engine log messages in 4 s - output is not rate-limited`);
+      if (checks > 4) throw new Error(`${checks} process checks in 4 s`);
       await packs.api.stopEngine();
       const end = Date.now() + 8000;
       while (Date.now() < end && (await packs.api.setupInfo()).engine.running) await sleep(300);
       if ((await packs.api.setupInfo()).engine.running) throw new Error('still running after stop');
+    });
+  }
+  const win = packs?.api.smokeWindow;
+  if (win) {
+    await step('window: minimized, the preview stream stops; restored, it resumes', async () => {
+      const m = await win('minimize');
+      if (!m.minimized) throw new Error('the window did not minimize');
+      await sleep(1000);                             // frames already on the way may still land
+      const f0 = frames();
+      await sleep(2000);
+      const whileHidden = frames() - f0;
+      await win('restore');
+      const f1 = frames();
+      await waitFor('frames resume', () => frames() - f1 >= 5, 6000);
+      steps.push(`     (${whileHidden} preview frames in 2 s minimized)`);
+      if (whileHidden > 2) throw new Error(`${whileHidden} preview frames arrived while minimized`);
+      if (!bridge.isOpen) throw new Error('connection lost while minimized');
+    });
+    await step('window: minimized then maximized directly, the streams resume', async () => {
+      await win('minimize');
+      await sleep(1000);
+      const b = await win('maximize');
+      if (b.minimized) throw new Error('still minimized after maximize');
+      const f1 = frames();
+      await waitFor('frames resume after maximize', () => frames() - f1 >= 5, 6000);
+      const r: any = await bridge.request({ type: 'getState' });
+      if (r.type !== 'state') throw new Error('no reply after maximize');
+      await win('unmaximize');
+      await sleep(500);
+    });
+    await step('window: maximized, the page fills the window', async () => {
+      const b = await win('maximize');
+      await waitFor('page resized', () => Math.abs(window.innerWidth - b.width) <= 2 && Math.abs(window.innerHeight - b.height) <= 2, 5000);
+      const top = q('.topbar').getBoundingClientRect();
+      if (Math.abs(top.width - window.innerWidth) > 2) throw new Error(`header ${top.width}px wide in a ${window.innerWidth}px window`);
+      await win('unmaximize');
+      await sleep(500);
     });
   }
   await step('setup: checklist finds TouchDesigner and the connection', async () => {

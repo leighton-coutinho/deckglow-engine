@@ -13,6 +13,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
+import { LineGate, isReadout } from './linegate';
 
 export interface RuntimeInfo {
   mode: 'repository' | 'installed' | 'custom';
@@ -25,6 +26,7 @@ export interface RuntimeInfo {
   touchDesigner: { exe: string | null; version: string | null };
   touchDesignerRunning: boolean;
   engine: { exe: string | null; running: boolean; startedByApp: boolean };
+  processChecks: number;
 }
 
 const PROJECT = path.join('touchDesigner', 'engine_input_block1.toe');
@@ -129,11 +131,36 @@ export class Runtime {
     return c.find((f) => existsSync(f)) ?? null;
   }
 
-  private running(image: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      execFile('tasklist.exe', ['/FI', `IMAGENAME eq ${image}`, '/NH', '/FO', 'CSV'], { windowsHide: true, timeout: 10000 },
-        (err, out) => resolve(!err && out.toLowerCase().includes(`"${image.toLowerCase()}"`)));
+  // One tasklist for every question, never two at once, and reused for 2 s:
+  // checking each program with its own tasklist, on every refresh, is how
+  // hundreds of them piled up (see linegate.ts).
+  private procCache: { at: number; names: Set<string> } | null = null;
+  private procInflight: Promise<Set<string>> | null = null;
+  /** tasklist processes started so far - the smoke test checks this stays small */
+  processChecks = 0;
+
+  private processes(fresh = false): Promise<Set<string>> {
+    if (!fresh && this.procCache && Date.now() - this.procCache.at < 2000) return Promise.resolve(this.procCache.names);
+    if (this.procInflight) return this.procInflight;
+    this.processChecks++;
+    this.procInflight = new Promise((resolve) => {
+      execFile('tasklist.exe', ['/NH', '/FO', 'CSV'], { windowsHide: true, timeout: 10000, maxBuffer: 8 * 1024 * 1024 },
+        (err, out) => {
+          const names = new Set<string>();
+          if (!err) for (const line of out.split(/\r?\n/)) {
+            const m = /^"([^"]+)"/.exec(line);
+            if (m) names.add(m[1].toLowerCase());
+          }
+          this.procCache = { at: Date.now(), names };      // a failure is cached too: no retry storm
+          this.procInflight = null;
+          resolve(names);
+        });
     });
+    return this.procInflight;
+  }
+
+  private async running(image: string, fresh = false): Promise<boolean> {
+    return (await this.processes(fresh)).has(image.toLowerCase());
   }
 
   async info(): Promise<RuntimeInfo> {
@@ -150,7 +177,9 @@ export class Runtime {
       project: installed ? path.join(root!, PROJECT) : null,
       touchDesigner: { exe, version: tdVersion },
       touchDesignerRunning: tdRunning,
-      engine: { exe: this.engineExe(), running: engineRunning, startedByApp: !!this.engineProc },
+      // our own engine is known without asking Windows (and without a stale list)
+      engine: { exe: this.engineExe(), running: !!this.engineProc || engineRunning, startedByApp: !!this.engineProc },
+      processChecks: this.processChecks,
     };
   }
 
@@ -168,7 +197,7 @@ export class Runtime {
   /** Replace the program parts with the bundled ones, keeping the person's data. TouchDesigner must be closed. */
   async update(): Promise<{ root: string; backup: string }> {
     if (!BUNDLED) throw new Error('this app has no bundled runtime (development checkout)');
-    if (await this.running('TouchDesigner.exe')) throw new Error('close TouchDesigner first - it would overwrite the new project when it saves');
+    if (await this.running('TouchDesigner.exe', true)) throw new Error('close TouchDesigner first - it would overwrite the new project when it saves');
     const root = this.root!;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const backup = path.join(root, 'backups', `runtime-${stamp}`);
@@ -200,7 +229,7 @@ export class Runtime {
     if (!exe) throw new Error('TouchDesigner was not found - install it, or choose TouchDesigner.exe in setup');
     const td = this.tdDir;
     if (!td) throw new Error('the DeckGlow runtime is not installed yet');
-    const running = await this.running('TouchDesigner.exe');
+    const running = await this.running('TouchDesigner.exe', true);
     if (!running) writeFileSync(path.join(td, 'bridge_token.txt'), randomBytes(24).toString('base64url'));
     const child = spawn(exe, [path.join(td, 'engine_input_block1.toe')], { detached: true, stdio: 'ignore', cwd: td });
     child.unref();
@@ -210,24 +239,37 @@ export class Runtime {
   // -------------------------------------------------------------- engine
   async startEngine(): Promise<void> {
     if (this.engineProc) return;
-    if (await this.running('ReactiveVisualEngine.exe')) throw new Error('the audio engine is already running (started outside the app)');
+    if (await this.running('ReactiveVisualEngine.exe', true)) throw new Error('the audio engine is already running (started outside the app)');
     const exe = this.engineExe();
     if (!exe) throw new Error('the audio engine (ReactiveVisualEngine.exe) was not found');
     const p = spawn(exe, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], cwd: path.dirname(exe) });
     this.engineProc = p;
+    this.procCache = null;                   // the process list just changed
+    // ~100 readout lines a second: collapsed and sent at most twice a second
+    const gate = new LineGate((l) => {
+      if (isReadout(l) && this.engineLog.length && isReadout(this.engineLog[this.engineLog.length - 1])) this.engineLog.pop();
+      this.engineLog.push(l);
+      if (this.engineLog.length > 50) this.engineLog.shift();
+      this.onEngine({ type: 'log', line: l });
+    });
+    // Output arrives in arbitrary chunks: keep the unfinished end of each chunk
+    // until its line ends, or half a readout would pass the gate as a message.
+    let partial = '';
     const onData = (buf: Buffer) => {
-      for (const line of buf.toString('utf8').split(/[\r\n]+/)) {
+      const parts = (partial + buf.toString('utf8')).split(/[\r\n]+/);
+      partial = parts.pop() ?? '';
+      if (partial.length > 4096) partial = '';           // a line that never ends
+      for (const line of parts) {
         const l = line.trim();
-        if (!l) continue;
-        this.engineLog.push(l);
-        if (this.engineLog.length > 200) this.engineLog.shift();
-        this.onEngine({ type: 'log', line: l });
+        if (l) gate.push(l);
       }
     };
     p.stdout?.on('data', onData);
     p.stderr?.on('data', onData);
     p.on('exit', (code) => {
+      gate.flush();
       if (this.engineProc === p) this.engineProc = null;
+      this.procCache = null;
       this.onEngine({ type: 'exit', code });
     });
   }

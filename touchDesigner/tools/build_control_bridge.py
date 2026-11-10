@@ -75,7 +75,8 @@ SLOT_PARAMS = %(slot_params)s
 TOKEN_FILE = os.path.join(project.folder, 'bridge_token.txt')   # this computer's project folder
 STATUS_EVERY = 15                     # frames (4 per second at 60 fps)
 
-_g = {'proto': None, 'frame': 0, 'last_t': None, 'fps': 0.0, 'manifests': {}, 'next_preview': {}}
+_g = {'proto': None, 'frame': 0, 'last_t': None, 'fps': 0.0, 'manifests': {}, 'next_preview': {},
+      'ready': True, 'startup': None}
 
 
 def _proto():
@@ -160,11 +161,87 @@ def _apply(m, controls):
             getattr(m.par, name).val = value
 
 
+def _norm(p):
+    return os.path.normcase(os.path.normpath(p)) if p else ''
+
+
+def _library_fingerprint():
+    """Size and modification time of everything the library's scan is built
+    from: each module folder's files (first-party and packs), approved.json
+    and the validation reports, with their full paths. Equal fingerprints mean
+    the saved scan still describes this folder; a copied project (other
+    paths) or an update (new files) differs."""
+    import hashlib
+    root = project.folder
+    entries = []
+
+    def add(path):
+        try:
+            st = os.stat(path)
+        except OSError:
+            return
+        entries.append((_norm(path), st.st_size, st.st_mtime_ns))
+
+    def add_dir(folder, only=None):
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            return
+        for n in names:
+            f = os.path.join(folder, n)
+            if os.path.isfile(f) and (only is None or n.endswith(only)):
+                add(f)
+
+    def add_modules(mods):
+        try:
+            names = sorted(os.listdir(mods))
+        except OSError:
+            return
+        for n in names:
+            folder = os.path.join(mods, n)
+            if os.path.isfile(os.path.join(folder, 'module.json')):
+                add_dir(folder)
+
+    add_modules(os.path.join(root, 'modules'))
+    packs = os.path.join(root, 'Packs')
+    if os.path.isdir(packs):
+        for pid in sorted(os.listdir(packs)):
+            add(os.path.join(packs, pid, 'pack.json'))
+            add_modules(os.path.join(packs, pid, 'modules'))
+    add(os.path.join(root, 'library', 'approved.json'))
+    add_dir(os.path.join(root, 'validation'), '.json')
+    return hashlib.sha1(repr(entries).encode('utf-8')).hexdigest()
+
+
+def MarkStarting():
+    """The project is opening: clients hear 'starting' until Startup() is done."""
+    _g['ready'] = False
+    _g['startup'] = {'opened': time.time()}
+
+
+def _set_ready(ready):
+    if _g.get('ready') == ready:
+        return
+    _g['ready'] = ready
+    st = _g.get('startup') or {}
+    if ready and 'opened' in st:
+        st['ready_after_s'] = round(time.time() - st['opened'], 2)
+    try:
+        _send(_proto().notify({'type': 'runtime', 'ready': ready, 'startup': st}))
+    except Exception as e:
+        print('control_bridge: could not announce readiness: %%s' %% e)
+
+
 def Startup():
     """A moment after the project opens: make every module path relative to
-    this folder, rescan the library (its saved scan holds the folders of the
-    computer that saved it), refresh pack palettes, and reload any module whose
-    file is not where the saved project expected it."""
+    this folder; rescan the library unless nothing it reads has changed since
+    the last startup (a saved scan holds the folders of the computer that saved
+    it, and an update brings new versions, approvals and reports); refresh
+    pack palettes; reload every module that was not loaded from the file this
+    project points to - missing, or another folder's copy (a project copied
+    from a repository would otherwise keep running the repository's modules).
+    Then tell clients the runtime is ready."""
+    t0 = time.perf_counter()
     moved, reload = [], []
     for name in HOSTS_ALL:
         h = op('/project1/' + name)
@@ -175,22 +252,43 @@ def Startup():
         if new != old:
             h.par.Modulepath = new
             moved.append(name)
+        if not new:
+            continue
+        want = new if os.path.isabs(new) else os.path.join(project.folder, new)
         m = h.op('module')
         ext = m.par.externaltox.eval() if m is not None else ''
-        if new and (m is None or m.op('out1') is None or not os.path.isfile(ext)):
+        if m is None or m.op('out1') is None or _norm(ext) != _norm(want) or not os.path.isfile(want):
             reload.append(name)
+    t1 = time.perf_counter()
+    # the slowest part of startup is a rescan (toeexpand on every module): skip
+    # it when nothing it reads has changed since the last startup's scan
+    rescanned = False
     lib = op('/project1/scene_library/library')
     if lib is not None:
-        lib.module.Scan(quiet=True)
+        fp = _library_fingerprint()
+        holder = lib.parent()
+        if not holder.fetch('static', {}) or holder.fetch('startup_fingerprint', None) != fp:
+            lib.module.Scan(quiet=True)
+            holder.store('startup_fingerprint', fp)
+            rescanned = True
+    t2 = time.perf_counter()
     logic = op('/project1/palette_source/palette_logic')
     if logic is not None and hasattr(logic.module, 'RefreshPacks'):
         logic.module.RefreshPacks()
     for name in reload:
         op('/project1/' + name).par.Load.pulse()
+    st = _g.get('startup') or {}
+    st.update(paths_s=round(t1 - t0, 3), scan_s=round(t2 - t1, 3), rescanned=rescanned,
+              total_s=round(time.perf_counter() - t0, 3), moved=len(moved), reloaded=reload)
+    _g['startup'] = st
+    print('control_bridge: startup - %%d path(s) made relative, %%s, %%d module(s) reloaded %%s, %%.2f s, project %%s'
+          %% (len(moved), 'library rescanned' if rescanned else 'library scan current', len(reload),
+             reload, st['total_s'], project.folder))
     if reload:
+        # loaded modules warm for a few frames; ready once their controls are back
         run("op(%%r).module._ReapplyControls(%%r)" %% (me.path, reload), delayFrames=10)
-    print('control_bridge: startup - %%d path(s) made relative, %%d module(s) reloaded, project %%s'
-          %% (len(moved), len(reload), project.folder))
+    else:
+        _set_ready(True)
 
 
 def _ReapplyControls(names):
@@ -206,6 +304,7 @@ def _ReapplyControls(names):
         else:
             ctl = _desired().get(HOST_SLOT[name], {})
         _apply(m, ctl)
+    _set_ready(True)
 
 
 # --------------------------------------------------------------- frames
@@ -301,7 +400,8 @@ def _trim_report(rep):
 
 
 def Status():
-    out = {'fps': round(_g['fps'], 1), 'slots': {}, 'limiter': {}, 'lanes': {}}
+    out = {'fps': round(_g['fps'], 1), 'slots': {}, 'limiter': {}, 'lanes': {},
+           'ready': bool(_g.get('ready', True)), 'startup': _g.get('startup')}
     looks = _looks()
     if looks is not None:
         out['take'] = looks.op('look_logic').module.State()
@@ -611,6 +711,9 @@ class Adapter(object):
             raise _err('failed', 'no projector - run build_projector_window.py')
         {'open': w.par.winopen, 'perform': w.par.performance, 'close': w.par.winclose}[action].pulse()
 
+    def ready(self):
+        return bool(_g.get('ready', True))
+
     # ----------------------------------------------------------- looks
     def save_look(self, index, name):
         _look_call(_look_logic().SaveLook, index, name)
@@ -711,7 +814,9 @@ def onServerStop(dat):
 
 FRAME_EXEC_START = r'''
 def onStart():
-    # let the project finish loading first (TouchDesigner initialises asynchronously)
+    # clients hear 'starting' until Startup() has run; let the project finish
+    # loading first (TouchDesigner initialises asynchronously)
+    op('runtime').module.MarkStarting()
     run("op('runtime').module.Startup()", delayFrames=30)
     return
 '''

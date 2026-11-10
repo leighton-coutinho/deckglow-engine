@@ -31,6 +31,8 @@ const api: DeckglowApi = {
   engineLog: () => ipcRenderer.invoke('deckglow:engineLog'),
   // only the event payload reaches the page, never the IPC event object
   onEngine: (cb) => { ipcRenderer.on('deckglow:engine', (_e, ev) => cb(ev)); },
+  smokeWindow: (action) => ipcRenderer.invoke('deckglow:smokeWindow', action),
+  onWindowVisible: (cb) => { ipcRenderer.on('deckglow:windowVisible', (_e, v) => cb(v === true)); },
 };
 
 contextBridge.exposeInMainWorld('deckglow', api);

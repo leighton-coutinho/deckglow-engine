@@ -27,6 +27,15 @@ is visible in the app. Status carries synthetic lanes moving at the show BPM.
 The token is read from touchDesigner/bridge_token.txt, created if missing,
 exactly like the real bridge. Do not run it while TouchDesigner's bridge is
 on the same port.
+
+Startup, as TouchDesigner does it, for testing the app's "starting" and
+"busy" handling:
+
+    --startup-seconds N   not ready for N s after start (welcome and status
+                          say ready: false, then a 'runtime' broadcast)
+    --stall FROM,TO       between FROM and TO s after start, answer nothing
+                          and send no status - TouchDesigner's main thread
+                          stalled; requests are answered when it ends
 """
 
 import base64
@@ -51,6 +60,8 @@ import bridge_protocol as bp  # noqa: E402
 
 TOKEN_FILE = os.path.join(TD, 'bridge_token.txt')
 PACKS_DIR = os.path.join(TD, 'Packs')          # --packs <dir> for a test install folder
+STARTUP_S = 0.0                                # --startup-seconds
+STALL = None                                   # --stall FROM,TO (seconds after start)
 CONTRACT = os.path.join(ROOT, 'docs', 'contract', 'deckglow.scene-module-1.json')
 GUID = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 PALETTES = [  # build_palette_source.py's default library
@@ -448,6 +459,9 @@ class FakeRuntime(object):
     def close_client(self, client):
         self.server.drop(client)
 
+    def ready(self):
+        return time.time() >= self.server.ready_at
+
     # -------------------------------------------------------------- status
     def status(self, fps):
         t = time.time()
@@ -471,7 +485,8 @@ class FakeRuntime(object):
                            'cookMs': 0.3 if s['module'] else 0.0}
         take = dict(self.take_st, active='a', progress=round(self.take_st['progress'], 3))
         return {'fps': round(fps, 1), 'slots': slots, 'lanes': dict((k, round(v, 4)) for k, v in lanes.items()),
-                'limiter': {'held': 0.0, 'transitions': 1.0, 'gain': 1.0}, 'take': take}
+                'limiter': {'held': 0.0, 'transitions': 1.0, 'gain': 1.0}, 'take': take,
+                'ready': self.ready()}
 
     def preview(self, width):
         height = int(round(width * 9 / 16.0))
@@ -500,6 +515,9 @@ class Server(socketserver.ThreadingTCPServer):
         with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
             token = f.read().strip()
         self.lock = threading.RLock()
+        self.started = time.time()
+        self.ready_at = self.started + STARTUP_S
+        self.announced_ready = STARTUP_S <= 0
         self.conns = {}                           # client id -> Handler
         self.rt = FakeRuntime(self)
         self.proto = bp.Protocol(self.rt, token)
@@ -511,6 +529,13 @@ class Server(socketserver.ThreadingTCPServer):
             h = self.conns.get(client)
             if h is not None:
                 h.send_text(json.dumps(msg))
+
+    def stalled_for(self):
+        """Seconds left of the simulated stall (0 when not stalled)."""
+        if not STALL:
+            return 0.0
+        t = time.time() - self.started
+        return max(0.0, STALL[1] - t) if STALL[0] <= t < STALL[1] else 0.0
 
     def drop(self, client):
         h = self.conns.pop(client, None)
@@ -525,7 +550,13 @@ class Server(socketserver.ThreadingTCPServer):
             now = time.time()
             fps = 1.0 / max(1e-6, now - last)
             last = now
+            if self.stalled_for():
+                continue
             with self.lock:
+                if not self.announced_ready and self.rt.ready():
+                    self.announced_ready = True
+                    self.send(self.proto.notify({'type': 'runtime', 'ready': True,
+                                                 'startup': {'ready_after_s': STARTUP_S}}))
                 if self.rt.tick_take(now):
                     self.send(self.proto.notify({'type': 'state', 'state': self.rt.state()}))
                 v = self.rt.validating
@@ -657,6 +688,9 @@ class Handler(socketserver.BaseRequestHandler):
                 if not fin:
                     continue
                 if kind == 0x1:
+                    wait = srv.stalled_for()
+                    if wait:
+                        time.sleep(wait)
                     with srv.lock:
                         out = srv.proto.receive(self.client, message.decode('utf-8', 'replace'))
                         srv.send(out)
@@ -675,9 +709,14 @@ def main(argv):
     port = 9980
     if '--port' in argv:
         port = int(argv[argv.index('--port') + 1])
+    global PACKS_DIR, STARTUP_S, STALL
     if '--packs' in argv:
-        global PACKS_DIR
         PACKS_DIR = os.path.abspath(argv[argv.index('--packs') + 1])
+    if '--startup-seconds' in argv:
+        STARTUP_S = float(argv[argv.index('--startup-seconds') + 1])
+    if '--stall' in argv:
+        a, b = argv[argv.index('--stall') + 1].split(',')
+        STALL = (float(a), float(b))
     # Windows lets this bind 127.0.0.1:<port> even while TouchDesigner's bridge holds
     # 0.0.0.0:<port>; loopback clients then reach whichever is more specific, silently
     # testing the mock instead of the runtime. So refuse when anything already answers.

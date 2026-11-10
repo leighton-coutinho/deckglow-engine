@@ -15,6 +15,15 @@ export type Connection =
   | { phase: 'auth-failed'; reason: string; retryInMs: number }
   | { phase: 'stopped' };
 
+/**
+ * Whether the runtime can answer right now. 'starting': TouchDesigner is still
+ * opening the project (the bridge says so until its Startup() is done).
+ * 'busy': connected, but the status stream has stopped for a moment -
+ * TouchDesigner is stalled (loading modules, compiling shaders) and answers
+ * nothing until it catches up. Requests are not lost; their replies come late.
+ */
+export type RuntimeReadiness = 'ready' | 'starting' | 'busy';
+
 export class BridgeRequestError extends Error {
   constructor(public code: string, message: string) {
     super(message);
@@ -34,6 +43,9 @@ export interface BridgeOptions {
   onPreview?: (frame: Blob | ArrayBuffer) => void;
   /** Other runtime-initiated messages: validation progress, libraryChanged. */
   onEvent?: (m: { type: string; [k: string]: any }) => void;
+  onReadiness?: (r: RuntimeReadiness) => void;
+  /** No status message for this long, while subscribed to status, means busy. */
+  busyAfterMs?: number;
 }
 
 type Pending = { resolve: (m: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
@@ -54,6 +66,10 @@ export class BridgeClient {
   private subs: Subscription = { status: false, preview: false };
   state: ShowState | null = null;
   connection: Connection = { phase: 'stopped' };
+  readiness: RuntimeReadiness = 'ready';
+  private runtimeReady = true;          // what the runtime itself says
+  private lastStatusAt = 0;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
 
   constructor(private opts: BridgeOptions) {}
 
@@ -78,6 +94,7 @@ export class BridgeClient {
 
   /** Subscriptions persist across reconnects. */
   async subscribe(next: Partial<Subscription>): Promise<void> {
+    if (next.status && !this.subs.status) this.lastStatusAt = Date.now();   // a fresh grace period
     this.subs = { ...this.subs, ...next };
     if (this.isOpen) await this.request({ type: 'subscribe', ...next });
   }
@@ -91,7 +108,32 @@ export class BridgeClient {
   // ------------------------------------------------------------- internals
   private setConnection(c: Connection): void {
     this.connection = c;
+    if (c.phase === 'open') {
+      this.lastStatusAt = Date.now();
+      this.watchdog ??= setInterval(() => this.updateReadiness(), 250);
+    } else if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
+    }
+    this.updateReadiness();
     this.opts.onConnection?.(c);
+  }
+
+  private updateReadiness(): void {
+    let r: RuntimeReadiness = 'ready';
+    if (this.connection.phase === 'open') {
+      if (!this.runtimeReady) r = 'starting';
+      else if (this.subs.status && Date.now() - this.lastStatusAt > (this.opts.busyAfterMs ?? 2500)) r = 'busy';
+    }
+    if (r === this.readiness) return;
+    this.readiness = r;
+    this.opts.onReadiness?.(r);
+  }
+
+  private setRuntimeReady(ready: unknown): void {
+    if (typeof ready !== 'boolean' || ready === this.runtimeReady) return;
+    this.runtimeReady = ready;
+    this.updateReadiness();
   }
 
   private rawRequest<T>(msg: Record<string, unknown>): Promise<T> {
@@ -105,7 +147,7 @@ export class BridgeClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new BridgeRequestError('timeout', `no reply to ${String(msg.type)}`));
-      }, this.opts.requestTimeoutMs ?? 10000);
+      }, this.opts.requestTimeoutMs ?? 20000);
       this.pending.set(id, { resolve, reject, timer });
       ws.send(JSON.stringify({ ...msg, id }));
     });
@@ -151,6 +193,7 @@ export class BridgeClient {
         if (welcome.type !== 'welcome') throw new BridgeRequestError('protocol', 'unexpected reply to hello');
         this.authenticated = true;
         this.attempt = 0;
+        this.runtimeReady = welcome.ready !== false;   // runtimes before 'ready' existed are always ready
         this.state = welcome.state;
         this.setConnection({ phase: 'open', runtimeApi: welcome.runtimeApi });
         if (welcome.state) this.opts.onState?.(welcome.state);
@@ -192,7 +235,13 @@ export class BridgeClient {
         this.state = m.state;
         this.opts.onState?.(m.state);
       } else if (m.type === 'status' && m.status) {
+        this.lastStatusAt = Date.now();
+        this.setRuntimeReady(m.status.ready);
+        this.updateReadiness();
         this.opts.onStatus?.(m.status);
+      } else if (m.type === 'runtime') {
+        this.setRuntimeReady(m.ready);
+        this.opts.onEvent?.(m);
       } else if (typeof m.type === 'string') {
         this.opts.onEvent?.(m);
       }

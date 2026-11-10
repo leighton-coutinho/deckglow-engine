@@ -247,9 +247,12 @@ class Protocol(object):
                     self.close(client)
                 return out
             sess['auth'] = True
+            # ready: false while the runtime is still opening the project (an
+            # adapter without ready() is always ready)
+            ready = self.rt.ready() if callable(getattr(self.rt, 'ready', None)) else True
             return [(client, {'type': 'welcome', 'id': mid, 'protocol': PROTOCOL,
                               'runtimeApi': RUNTIME_API, 'moduleContract': MODULE_CONTRACT,
-                              'state': self.rt.state()})]
+                              'ready': bool(ready), 'state': self.rt.state()})]
 
         handler = getattr(self, '_on_' + str(mtype), None) if isinstance(mtype, str) else None
         if handler is None or mtype == 'hello':

@@ -693,8 +693,8 @@ script of mine left its socket timeout short and its final restore timed out
 on the client side; TouchDesigner had applied it anyway (checked).
 
 **Desktop app — step 5 (packaging, setup, CI): done and verified on this
-machine** (2026-11-07); CI's engine job passes on GitHub, the test job's fix
-is not pushed yet, and the release workflow has not run. See the top-level
+machine** (2026-11-07); CI is green on GitHub (2026-11-08); the release
+workflow has not run (it needs a `v*` tag). See the top-level
 [README.md](README.md) and [app/README.md](app/README.md) "Setup and
 packaging".
 
@@ -750,8 +750,9 @@ packaging".
   refused connection with `error` and no `close`, and `bridge.ts` only
   retried on `close`. The client now ends each attempt exactly once on
   close, a pre-open error or a 5 s open timeout; the test waits 15 s and
-  reports the connection phases if it still fails. Not confirmed on Node 22
-  (fetching a Node 22 binary here was refused).
+  reports the connection phases if it still fails. **Third run green**
+  (2026-11-08, `de83487`): engine built, 16 pass, 5 skip, contract check
+  passed - the reconnect fix holds on Node 22.
 - No licence file in the repo — the owner's decision.
 
 Verified so far: `npm test` 21/21; dev smoke 24/24 against the mock (adds
@@ -777,6 +778,77 @@ installer itself was not run here (it would install to the user's account).
 Testing quirk, not an app bug: when a shell pipes the app's stdout (`| grep`),
 the TouchDesigner the app launches inherits the pipe and the pipeline never
 ends - redirect to a file instead.
+
+**Fixed: the app flooded the system with process checks** (2026-11-09,
+reported as freezes on minimize/maximize, "no reply to setBackground", TD at
+5-6 fps). The engine prints a readout line per audio block (~100 a second,
+`\r`-terminated); every line went to the page over IPC and Setup refreshed on
+each, and every refresh ran two `tasklist` processes. Found 323 `tasklist`
+and 366 `conhost` alive, Windows refusing new threads ("No more threads can
+be created"), the app's renderer pinning a core (830 s CPU), TD at 6 fps.
+Fixes: `src/main/linegate.ts` collapses readouts to the newest and forwards
+engine output at most twice a second; one `tasklist` per check, never two at
+once, reused for 2 s (`fresh` for decisions), counted in `processChecks`;
+Setup refreshes on engine exit and timers only, never while hidden; the
+preview keeps one frame decoding and the newest waiting (it used to leak an
+object URL for every frame replaced mid-load, and every frame while
+minimized); preview and status streams pause while the window is minimized
+or hidden - from main-process window events, because `document.hidden` never
+changes with `backgroundThrottling` off. Tests: `linegate.test.mjs` (3), smoke
+steps for engine output and process checks over 4 s, 0 preview frames while
+minimized, the page filling a maximized window. Lesson: **never do work per
+line of a child process's output, and never spawn processes from a UI event
+without a rate limit.**
+
+Two more bugs found by the first run against TD with music: the 2 s process
+cache reported a just-started engine as not running (the app's own engine is
+now known without asking Windows, and the cache is dropped on start/stop),
+and stdout chunks split readouts mid-line so fragments passed the gate as
+messages (partial lines are now held until they end). **Verified against TD
+with music (2026-11-09): smoke 28/28** - engine running 4 s: 6 log messages,
+1 process check; 0 preview frames while minimized; the page fills a
+maximized window.
+
+**Performance after the fix** (12-core machine, TD at 61-71 fps with the app
+connected, engine with music, 30 s samples): TouchDesigner 45% of one core
+(360 MB working set; 2.5 GB private, flat - mostly driver/GPU mappings), the
+app's page 8% + GPU process 7% + main 4% (~420 MB across its processes,
+flat over a minute), the engine 2%. About 70% of one core in all, ~6% of the
+machine. A 15 fps preview costs TD ~7% of a core and no frames.
+
+**Startup: cheap, correct, and announced** (2026-11-09, app 0.1.1; reported
+as the window stuck for seconds after launch, empty lanes, "no reply to
+setTransition"). The bridge runs on TD's main thread, so while TD opens the
+project (module loads, shader compiles, `Startup()`) nothing is answered and
+the app's requests timed out. Three changes:
+
+- `Startup()` rescans the library only when `_library_fingerprint()` (size
+  and mtime, with full paths, of every module folder's files, `pack.json`s,
+  `approved.json` and `validation/*.json` - 7 ms) differs from the one stored
+  on `scene_library` (`startup_fingerprint`) at the last startup scan. A
+  copied folder or an app update always differs. Folder names alone were not
+  enough: an update keeps the folders but brings new versions and approvals.
+- **Bug fixed:** a module is reloaded when its `externaltox` is not the file
+  this project's `Modulepath` resolves to. Before, only a *missing* file
+  triggered a reload, so the installed copy kept running the repository's
+  modules (the shipped `.toe` stores the repository's paths).
+- Readiness: `MarkStarting()` in `onStart` sets `ready` false; it turns true
+  when `Startup()` ends (or after `_ReapplyControls` when modules were
+  reloaded). The welcome carries `ready` (adapters without `ready()` count as
+  ready), status carries `ready` and `startup` timings, and a `runtime`
+  broadcast announces the change. The app (`bridge.ts` `readiness`) shows
+  "Starting…" until ready and "Busy…" when status stops for 2.5 s while
+  subscribed; timeouts during either raise no toast; requests wait 20 s; the
+  library is fetched once ready. `mock_bridge.py --startup-seconds N --stall
+  FROM,TO` simulates both (`test/readiness.test.mjs`).
+
+Measured cold start of the repository project: TD's own launch ~8 s before
+the bridge listens, welcome at 8.8 s (`ready` false), `Startup()` 4 ms (no
+rescan, nothing reloaded), ready 0.33 s after `onStart`, no status gaps,
+60 fps from 10 s. The installed copy, updated to 0.1.1 through Setup and
+opened from the app: rescanned once (0.29 s - other paths), reloaded all six
+hosts from `Documents\DeckGlow` (they had been running the repository's
+modules), ready 0.9 s after `onStart`, all four layers `ok: 1280x720`, 60 fps.
 
 ### Which file is current
 

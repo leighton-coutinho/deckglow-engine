@@ -32,20 +32,33 @@ export function createSetup(ctx: SetupCtx) {
   const heard = { at: 0 };
   const engineLog: string[] = [];
 
+  // Engine output is only shown (and only while Setup is open). Never refresh
+  // per line: the engine prints ~100 readouts a second, and refreshing on each
+  // flooded the system with process checks (2026-11-09).
   ctx.api.onEngine((ev: EngineEvent) => {
     if (ev.type === 'log') {
+      if (/^Drive:\s/.test(ev.line) && engineLog.length && /^Drive:\s/.test(engineLog[engineLog.length - 1])) engineLog.pop();
       engineLog.push(ev.line);
       if (engineLog.length > 8) engineLog.shift();
+      if (dialog?.open) render();
     } else {
       engineLog.push(`engine stopped (exit ${ev.code ?? '-'})`);
+      void refresh();
     }
-    void refresh();
   });
 
-  async function refresh(): Promise<void> {
-    info = await ctx.api.setupInfo().catch(() => info);
-    renderHeader();
-    if (dialog?.open) render();
+  let refreshing: Promise<void> | null = null;
+  function refresh(): Promise<void> {
+    refreshing ??= (async () => {
+      try {
+        info = await ctx.api.setupInfo().catch(() => info);
+        renderHeader();
+        if (dialog?.open) render();
+      } finally {
+        refreshing = null;
+      }
+    })();
+    return refreshing;
   }
 
   /** Called with each status message: notices that the engine is hearing sound. */
@@ -196,7 +209,7 @@ export function createSetup(ctx: SetupCtx) {
     document.body.append(dialog);
     dialog.showModal();
     void refresh();
-    timer = setInterval(() => void refresh(), 2000);
+    timer = setInterval(() => { if (!document.hidden) void refresh(); }, 2000);
   }
 
   // ------------------------------------------------------------- header
@@ -219,7 +232,9 @@ export function createSetup(ctx: SetupCtx) {
       void (info.engine.running ? ctx.api.stopEngine() : ctx.api.startEngine()).catch((e: Error) => toast(e.message)).finally(() => void refresh());
     });
     await refresh();
-    setInterval(() => void refresh(), 5000);
+    // the header's Engine button and Setup reminder; nothing to update while hidden
+    setInterval(() => { if (!document.hidden) void refresh(); }, 10000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
     const all = await ctx.api.getSettings().catch(() => ({} as any));
     if (autoOpen && info && (!(all as any).setupSeen || !info.installed || !info.touchDesigner.exe || info.updateAvailable)) open();
   }

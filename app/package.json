@@ -1,7 +1,7 @@
 {
   "name": "deckglow-app",
   "productName": "DeckGlow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "DeckGlow desktop app: drives the TouchDesigner runtime over deckglow.control/1.",
   "author": "DeckGlow",
@@ -31,12 +31,25 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "build/runtime", "to": "runtime" },
-      { "from": "build/engine", "to": "engine" }
+      {
+        "from": "build/runtime",
+        "to": "runtime"
+      },
+      {
+        "from": "build/engine",
+        "to": "engine"
+      }
     ],
     "asar": true,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "DeckGlow-Setup-${version}.exe"
     },
     "nsis": {
